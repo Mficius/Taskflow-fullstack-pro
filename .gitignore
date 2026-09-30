@@ -1,0 +1,31 @@
+# Frontend
+frontend/node_modules/
+frontend/build/
+frontend/coverage/
+
+# Backend
+backend/vendor/
+backend/.env
+backend/storage/*.key
+backend/storage/logs/
+backend/bootstrap/cache/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Coverage
+coverage/
+
+# Docker
+*.log
+
+mysql/

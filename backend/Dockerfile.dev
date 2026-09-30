@@ -1,0 +1,51 @@
+FROM php:8.4-apache
+
+WORKDIR /var/www/html
+
+# 1. Installation des dépendances système nécessaires
+RUN apt-get update && apt-get install -y \
+    libpng-dev \
+    libzip-dev \
+    libonig-dev \
+    libjpeg-dev \
+    libxml2-dev \
+    libfreetype6-dev \
+    zip \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Installation des extensions PHP
+RUN docker-php-ext-install pdo pdo_mysql mysqli zip
+
+# 3. Activation du module de réécriture Apache
+RUN a2enmod rewrite
+
+# Configuration Apache pour Laravel
+COPY apache-vhost.conf /etc/apache2/sites-available/000-default.conf
+
+# 4. Installation de Composer (Copie de l'image officielle)
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# 5. Copie des fichiers du projet dans le conteneur
+COPY . .
+
+# 6. Installation des dépendances PHP du projet
+RUN composer install --no-interaction --optimize-autoloader --no-dev
+
+# 7. Ajustement des permissions pour Apache
+RUN chown -R www-data:www-data /var/www/html
+
+# À ajouter à la fin de votre Dockerfile.dev
+RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
+    && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+
+
+# Copie le script de démarrage dans le conteneur
+COPY docker-entrypoint.sh /usr/local/bin/
+
+# Donne les droits d'exécution au script
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Définit le script comme commande de démarrage officielle
+ENTRYPOINT ["docker-entrypoint.sh"]
+

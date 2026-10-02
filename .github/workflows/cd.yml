@@ -1,0 +1,65 @@
+name: CD - Build & Push Docker Images
+
+on:
+  workflow_run:
+    workflows: ["CI - Tests, Security & Quality"] # Doit correspondre exactement au 'name' de votre ci.yml
+    types:
+      - completed
+    branches:
+      - main
+
+env:
+  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    # Condition CRUCIALE : Le build ne démarre QUE si la CI s'est terminée avec un succès total
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build Laravel image
+        run: |
+          docker build \
+            -t $DOCKER_USERNAME/laravel-api:$IMAGE_TAG \
+            ./backend
+
+      - name: Build frontend image
+        run: |
+          docker build \
+            -t $DOCKER_USERNAME/react-frontend:$IMAGE_TAG \
+            ./frontend
+
+      - name: Scan Laravel image (Trivy)
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ${{ env.DOCKER_USERNAME }}/laravel-api:${{ env.IMAGE_TAG }}
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+
+      - name: Scan frontend image (Trivy)
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ${{ env.DOCKER_USERNAME }}/react-frontend:${{ env.IMAGE_TAG }}
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+
+      - name: Push Laravel image
+        run: |
+          docker push $DOCKER_USERNAME/laravel-api:$IMAGE_TAG
+
+      - name: Push frontend image
+        run: |
+          docker push $DOCKER_USERNAME/react-frontend:$IMAGE_TAG

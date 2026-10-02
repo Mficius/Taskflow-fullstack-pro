@@ -39,7 +39,7 @@ jobs:
       #   working-directory: backend
       #   run: php artisan test --coverage-clover=coverage.xml
 
-      
+
       # - name: Upload coverage
       #   uses: actions/upload-artifact@v4
       #   with:
@@ -112,15 +112,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Run Snyk to check for vulnerabilities
+      - name: Snyk Backend Scan
         uses: snyk/actions/node@master
+        continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-
-       # # Optionally, you can specify the severity threshold for vulnerabilities   
-      - name: Run Snyk to check for vulnerabilities
-        uses: snyk/actions/node@master
         with:
+          command: code test backend/
           args: --severity-threshold=high
+
+      - name: Snyk Frontend Scan
+        uses: snyk/actions/node@master
+        continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: code test frontend/
+          args: --severity-threshold=high

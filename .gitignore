@@ -8,7 +8,6 @@ backend/vendor/
 backend/.env
 backend/storage/*.key
 backend/storage/logs/
-backend/bootstrap/cache/
 
 # Environment
 .env

@@ -111,5 +111,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Run SAST
-        uses: AppThreat/sast-scan-action@master
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+       # # Optionally, you can specify the severity threshold for vulnerabilities   
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/node@master
+        with:
+          args: --severity-threshold=high
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

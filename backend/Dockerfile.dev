@@ -12,10 +12,10 @@ RUN apt-get update && apt-get install -y \
     libfreetype6-dev \
     zip \
     unzip \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && docker-php-ext-install pdo pdo_mysql mysqli zip
 
-# 2. Installation des extensions PHP
-RUN docker-php-ext-install pdo pdo_mysql mysqli zip
+
 
 # 3. Activation du module de réécriture Apache
 RUN a2enmod rewrite
@@ -27,13 +27,21 @@ COPY apache-vhost.conf /etc/apache2/sites-available/000-default.conf
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 # 5. Copie des fichiers du projet dans le conteneur
-COPY . .
+COPY app/ ./app
+COPY bootstrap/ ./bootstrap
+COPY config/ ./config
+COPY public/ ./public
+COPY resources/ ./resources
+COPY routes/ ./routes
+COPY database/ ./database
+COPY composer.json composer.lock ./
+
+COPY artisan .env.example ./
 
 # 6. Installation des dépendances PHP du projet
-RUN composer install --no-interaction --optimize-autoloader --no-dev
+RUN composer install --no-interaction --optimize-autoloader --no-dev \
+    && chown -R www-data:www-data /var/www/html
 
-# 7. Ajustement des permissions pour Apache
-RUN chown -R www-data:www-data /var/www/html
 
 # À ajouter à la fin de votre Dockerfile.dev
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \

@@ -1,6 +1,6 @@
 # Etape composer
 
-FROM composer:2 as vendorSave
+FROM composer:2-alpine3.20 AS vendorsave
 
 WORKDIR /app
 
@@ -52,17 +52,15 @@ RUN docker-php-ext-install pdo \
 WORKDIR /var/www/html
 
 # copier le dossier vendor
-COPY --from=vendorSave /app . 
+COPY --from=vendorsave /app . 
 
 # Optimiser laravel
 
 RUN php artisan package:discover --ansi && \
     php artisan config:cache || true && \
     php artisan route:cache || true && \
-    php artisan view:cache || true
-
-
-RUN chown -R www-data:www-data /var/www/html
+    php artisan view:cache || true \
+    && chown -R www-data:www-data /var/www/html 
 
 USER www-data
 

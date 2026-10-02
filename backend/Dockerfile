@@ -1,6 +1,6 @@
 # Etape composer
 
-FROM composer:2-alpine3.20 AS vendorsave
+FROM composer:2.10 AS vendorsave
 
 WORKDIR /app
 

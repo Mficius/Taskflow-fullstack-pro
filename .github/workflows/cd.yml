@@ -2,7 +2,7 @@ name: CD - Build & Push Docker Images
 
 on:
   workflow_run:
-    workflows: ["CI - Tests, Security & Quality"] # Doit correspondre exactement au 'name' de votre ci.yml
+    workflows: ["CI - Tests, Security & Quality"]
     types:
       - completed
     branches:
@@ -10,17 +10,20 @@ on:
 
 env:
   DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-  IMAGE_TAG: ${{ github.sha }}
+  IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    # Condition CRUCIALE : Le build ne démarre QUE si la CI s'est terminée avec un succès total
+
+    # Le build ne démarre QUE si la CI est entièrement réussie
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Login to DockerHub
         uses: docker/login-action@v3
@@ -28,18 +31,36 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ====================================
+      # BUILD LARAVEL
+      # ====================================
       - name: Build Laravel image
-        run: |
-          docker build \
-            -t $DOCKER_USERNAME/laravel-api:$IMAGE_TAG \
-            ./backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: false
+          tags: ${{ env.DOCKER_USERNAME }}/laravel-api:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=laravel
+          cache-to: type=gha,mode=max,scope=laravel
 
+      # ====================================
+      # BUILD FRONTEND
+      # ====================================
       - name: Build frontend image
-        run: |
-          docker build \
-            -t $DOCKER_USERNAME/react-frontend:$IMAGE_TAG \
-            ./frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: false
+          tags: ${{ env.DOCKER_USERNAME }}/react-frontend:${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
 
+      # ====================================
+      # TRIVY - LARAVEL
+      # ====================================
       - name: Scan Laravel image (Trivy)
         uses: aquasecurity/trivy-action@0.35.0
         with:
@@ -48,6 +69,9 @@ jobs:
           exit-code: 1
           severity: CRITICAL,HIGH
 
+      # ====================================
+      # TRIVY - FRONTEND
+      # ====================================
       - name: Scan frontend image (Trivy)
         uses: aquasecurity/trivy-action@0.35.0
         with:
@@ -56,6 +80,9 @@ jobs:
           exit-code: 1
           severity: CRITICAL,HIGH
 
+      # ====================================
+      # PUSH
+      # ====================================
       - name: Push Laravel image
         run: |
           docker push $DOCKER_USERNAME/laravel-api:$IMAGE_TAG

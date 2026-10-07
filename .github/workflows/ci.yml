@@ -118,7 +118,7 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          command: code test backend/
+          command: test backend/
           args: --severity-threshold=high
 
       - name: Snyk Frontend Scan
@@ -127,5 +127,5 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          command: code test frontend/
+          command: test frontend/
           args: --severity-threshold=high

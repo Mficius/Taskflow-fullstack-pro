@@ -113,7 +113,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Snyk Backend Scan
-        uses: snyk/actions/node@master
+        uses: snyk/actions/php@ce71ff9eda12bc48837b2855bca31364cdfa93e2
         #continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -121,8 +121,8 @@ jobs:
           command: test backend/
           args: --severity-threshold=high
 
-      - name: Snyk Frontend Scan
-        uses: snyk/actions/node@master
+      - name: Snyk Frontend Scan 
+        uses: snyk/actions/node@ce71ff9eda12bc48837b2855bca31364cdfa93e2
         #continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

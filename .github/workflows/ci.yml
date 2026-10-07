@@ -132,7 +132,7 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           command: test
-          args: --severity-threshold=high --project-folder=backend/
+          args: --severity-threshold=high --file=backend/composer.lock
 
       - name: Snyk Frontend Scan
         uses: snyk/actions/node@ce71ff9eda12bc48837b2855bca31364cdfa93e2
@@ -141,4 +141,4 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           command: test
-          args: --severity-threshold=high --project-folder=frontend/
+          args: --severity-threshold=high --file=frontend/package.json

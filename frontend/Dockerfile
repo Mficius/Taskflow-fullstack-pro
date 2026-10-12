@@ -14,7 +14,7 @@ RUN npm run build
 
 
 # deuxieme etape : servir l'application avec nginx
-FROM nginx:1.27-alpine
+FROM nginxinc/nginx-unprivileged:stable-alpine
 
 RUN apk update && apk upgrade
 

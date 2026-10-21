@@ -81,7 +81,7 @@ jobs:
           severity: CRITICAL,HIGH
 
       # ====================================
-      # PUSH
+      # PUSH 
       # ====================================
       - name: Push Laravel image
         run: |

@@ -16,8 +16,6 @@ RUN npm run build
 # deuxieme etape : servir l'application avec nginx
 FROM nginxinc/nginx-unprivileged:stable-alpine
 
-RUN apk update && apk upgrade
-
 
 COPY --from=builder /app/build /usr/share/nginx/html
 

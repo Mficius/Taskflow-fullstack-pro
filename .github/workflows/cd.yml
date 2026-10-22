@@ -1,3 +1,4 @@
+
 name: CD - Build & Push Docker Images
 
 on:
@@ -16,7 +17,7 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
-    # Le build ne démarre QUE si la CI est entièrement réussie
+    # Le build démarre uniquement si la CI a réussi
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     steps:
@@ -42,6 +43,7 @@ jobs:
         with:
           context: ./backend
           push: false
+          load: true
           tags: ${{ env.DOCKER_USERNAME }}/laravel-api:${{ env.IMAGE_TAG }}
           cache-from: type=gha,scope=laravel
           cache-to: type=gha,mode=max,scope=laravel
@@ -54,6 +56,7 @@ jobs:
         with:
           context: ./frontend
           push: false
+          load: true
           tags: ${{ env.DOCKER_USERNAME }}/react-frontend:${{ env.IMAGE_TAG }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
@@ -63,7 +66,7 @@ jobs:
       # ====================================
       - name: Scan Laravel image (Trivy)
         uses: aquasecurity/trivy-action@0.35.0
-        with:
+        with: 
           image-ref: ${{ env.DOCKER_USERNAME }}/laravel-api:${{ env.IMAGE_TAG }}
           format: table
           exit-code: 1
@@ -81,12 +84,10 @@ jobs:
           severity: CRITICAL,HIGH
 
       # ====================================
-      # PUSH  
+      # PUSH - uniquement après les scans réussis
       # ====================================
       - name: Push Laravel image
-        run: |
-          docker push $DOCKER_USERNAME/laravel-api:$IMAGE_TAG
+        run: docker push "$DOCKER_USERNAME/laravel-api:$IMAGE_TAG"
 
       - name: Push frontend image
-        run: |
-          docker push $DOCKER_USERNAME/react-frontend:$IMAGE_TAG
+        run: docker push "$DOCKER_USERNAME/react-frontend:$IMAGE_TAG"

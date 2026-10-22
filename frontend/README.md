@@ -1,52 +1,56 @@
 # TaskFlow Frontend
 
-React + Material UI frontend for the TaskFlow Laravel API.
+Frontend React 18 + Vite + Material UI pour l'API Laravel TaskFlow.
 
-## Local development
+## Prérequis
+- Node.js 20.19+ ou 22.12+ (Node.js 24 recommandé)
+- npm
+- API Laravel disponible sur `http://localhost:8000` en développement
 
-1. Start Laravel on `http://localhost:8000`.
-2. Copy `.env.example` to `.env` only if you need a custom API URL.
-3. Run `npm install`.
-4. Run `npm start`.
+## Développement local
 
-The development proxy in `package.json` forwards `/api` to `http://localhost:8000`.
+```bash
+npm ci
+npm run dev
+```
 
-The frontend now uses the backend for authentication, users, projects, tasks, comments and activity logs. No demo users or task/project persistence are kept in localStorage. Only the UI theme and selected project are local preferences.
+Vite démarre sur `http://localhost:3000`. Les requêtes `/api` sont transmises à `http://localhost:8000` par le proxy Vite.
 
-## TaskFlow V3 — SaaS Workspace Upgrade
+Pour utiliser une autre URL d'API, créez un fichier `.env` à la racine du frontend :
 
-This version keeps the existing TaskFlow visual identity while adding a more complete project-management workflow:
+```dotenv
+VITE_API_URL=/api
+VITE_API_PROXY_TARGET=http://localhost:8000
+```
 
-- Project workspace with Overview / Board / List / Timeline / Members / Activity tabs
-- Shared advanced filters: search, status, priority, project, assignee and due date
-- Saved filter views stored locally per workspace
-- Board and List are two views of the same filtered task dataset
-- Drag-and-drop task movement between Kanban columns
-- WIP/load signals and compact decision-oriented task cards
-- Global Analytics page with project performance and workload distribution
-- Clear project context and persistent sidebar navigation
-- Existing API integration, authentication, comments and offline cache preserved
+`VITE_API_URL` est l'URL utilisée par Axios dans le navigateur. `VITE_API_PROXY_TARGET` configure uniquement le proxy du serveur de développement Vite. Les variables `VITE_*` sont publiques : n'y placez aucun secret.
 
-The frontend remains compatible with the existing backend API used by the original project.
+## Build et aperçu de production
 
-## TaskFlow V4 Pro
+```bash
+npm run build
+npm run preview
+```
 
-V4 adds a more product-oriented SaaS interaction layer on top of the V3 workspace:
-- hash-based contextual navigation (`#/dashboard`, `#/tasks`, `#/projects/:id/:tab`, etc.)
-- global search / command palette with `Ctrl+K` / `Cmd+K`
-- searchable projects, tasks, members and navigation actions
-- notification center for overdue tasks and recent activity
-- persistent project tab context in the URL
-- analytics period selection scoped to task activity dates
-- saved task views remain available through local storage
+Vite génère le site statique dans `dist/`.
 
-## TaskFlow V5 Pro
+## Docker
 
-This frontend iteration adds a SaaS-oriented workspace layer:
-- Inbox with unread/read state and attention views
-- Searchable audit log surface
-- Workspace delivery overview and "My work" panel
-- Expanded RBAC navigation (admin/manager/member)
-- Existing project workspace, board/list/timeline, analytics and command palette retained
+```bash
+docker build -t taskflow-frontend .
+docker run --rm -p 8080:8080 taskflow-frontend
+```
 
-Production note: frontend permissions are for UX only. Real authorization, tenant isolation, audit immutability and workspace membership must be enforced by the backend/API.
+Ouvrez `http://localhost:8080`. Le conteneur sert les fichiers compilés par Nginx sur le port 8080.
+
+> Important : le proxy configuré dans `vite.config.js` sert au développement uniquement. En production, configurez Nginx ou votre reverse proxy pour transmettre `/api` au backend Laravel, ou définissez `VITE_API_URL` au moment du build vers une URL d'API accessible depuis le navigateur.
+
+## Fonctionnalités existantes
+
+- Tableau de bord, tâches, projets et espaces de travail
+- Kanban, filtres avancés, recherche et palette de commandes
+- Analytics, boîte de réception, journal d'activité et audit
+- Authentification et intégration Axios avec l'API Laravel
+- Préférences locales pour le thème et le projet sélectionné
+
+Les contrôles d'accès côté frontend sont uniquement ergonomiques. L'API doit appliquer les autorisations et l'isolation des données.

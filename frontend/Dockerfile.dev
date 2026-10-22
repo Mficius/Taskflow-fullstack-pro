@@ -4,14 +4,10 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm install
+RUN npm ci
 
-# Au lieu de COPY . .
-COPY src/ ./src
-COPY public/ ./public
-COPY index.js jest.config.js jsconfig.json ./
-
+COPY . .
 
 EXPOSE 3000
 
-CMD [ "npm", "start" ]
+CMD ["npm", "run", "dev"]

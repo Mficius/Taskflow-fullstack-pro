@@ -1,5 +1,5 @@
 {
-  "name": "Taskflow-frontend",
+  "name": "taskflow-frontend",
   "version": "1.0.0",
   "private": true,
   "dependencies": {
@@ -12,12 +12,12 @@
     "react-dom": "^18.2.0"
   },
   "scripts": {
+    "dev": "vite",
     "start": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest"
+    "test": "vitest run"
   },
-
   "browserslist": {
     "production": [
       ">0.2%",
@@ -38,6 +38,5 @@
     "jsdom": "^30.1.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.4"
-  },
-  "proxy": "http://localhost:8000"
+  }
 }

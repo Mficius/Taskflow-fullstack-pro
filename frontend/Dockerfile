@@ -1,24 +1,15 @@
-
-# premiere etape : builder l'application react
-FROM node:24-alpine as builder
-
+# Build React/Vite frontend
+FROM node:24-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
-
-RUN npm ci --ignore-scripts
+RUN npm ci
 
 COPY . .
-
 RUN npm run build
 
-
-# deuxieme etape : servir l'application avec nginx
+# Serve static assets with unprivileged Nginx
 FROM nginxinc/nginx-unprivileged:stable-alpine
-
-
-COPY --from=builder /app/build /usr/share/nginx/html
-
+COPY --from=builder /app/dist /usr/share/nginx/html
 EXPOSE 8080
-
 CMD ["nginx", "-g", "daemon off;"]

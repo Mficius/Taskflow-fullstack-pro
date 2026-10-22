@@ -2,7 +2,7 @@ FROM php:8.4-apache
 
 WORKDIR /var/www/html
 
-# 1. Installation des dépendances système nécessaires
+# 1. Installation des dépendances système et extensions PHP
 RUN apt-get update && apt-get install -y \
     libpng-dev \
     libzip-dev \
@@ -12,21 +12,24 @@ RUN apt-get update && apt-get install -y \
     libfreetype6-dev \
     zip \
     unzip \
-    && rm -rf /var/lib/apt/lists/* \
-    && docker-php-ext-install pdo pdo_mysql mysqli zip
+    git \
+    && docker-php-ext-install \
+        pdo \
+        pdo_mysql \
+        mysqli \
+        zip \
+    && rm -rf /var/lib/apt/lists/*
 
-
-
-# 3. Activation du module de réécriture Apache
+# 2. Activation du module de réécriture Apache
 RUN a2enmod rewrite
 
-# Configuration Apache pour Laravel
+# 3. Configuration du VirtualHost Apache pour Laravel
 COPY apache-vhost.conf /etc/apache2/sites-available/000-default.conf
 
-# 4. Installation de Composer (Copie de l'image officielle)
+# 4. Installation de Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# 5. Copie des fichiers du projet dans le conteneur
+# 5. Copie des fichiers de l'application Laravel
 COPY app/ ./app
 COPY bootstrap/ ./bootstrap
 COPY config/ ./config
@@ -34,26 +37,43 @@ COPY public/ ./public
 COPY resources/ ./resources
 COPY routes/ ./routes
 COPY database/ ./database
+
+# Copie des fichiers de dépendances Composer
 COPY composer.json composer.lock ./
 
-COPY artisan .env.example ./
+# Copie du point d'entrée Laravel et du modèle d'environnement
+COPY artisan ./
+COPY .env.example ./
 
-# 6. Installation des dépendances PHP du projet
-RUN composer install --no-interaction --optimize-autoloader --no-dev \
-    && chown -R www-data:www-data /var/www/html
+# 6. Installation des dépendances PHP
+RUN composer install \
+    --no-interaction \
+    --optimize-autoloader \
+    --no-dev \
+    --prefer-dist
 
+# 7. Création des répertoires nécessaires à Laravel
+RUN mkdir -p \
+    /var/www/html/storage/app \
+    /var/www/html/storage/framework/cache/data \
+    /var/www/html/storage/framework/sessions \
+    /var/www/html/storage/framework/views \
+    /var/www/html/storage/logs \
+    /var/www/html/bootstrap/cache
 
-# À ajouter à la fin de votre Dockerfile.dev
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
-    && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+# 8. Configuration des permissions
+RUN chown -R www-data:www-data \
+        /var/www/html/storage \
+        /var/www/html/bootstrap/cache \
+    && chmod -R 775 \
+        /var/www/html/storage \
+        /var/www/html/bootstrap/cache
 
+# 9. Copie du script de démarrage
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
-# Copie le script de démarrage dans le conteneur
-COPY docker-entrypoint.sh /usr/local/bin/
-
-# Donne les droits d'exécution au script
+# 10. Autorisation d'exécution du script
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Définit le script comme commande de démarrage officielle
+# 11. Définition du script de démarrage
 ENTRYPOINT ["docker-entrypoint.sh"]
-

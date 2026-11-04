@@ -1,7 +1,8 @@
 vendor
 node_modules
-.git
-.github
 .env
-storage/logs
+.env.*
+!.env.example
+coverage.xml
+.phpunit.cache
 *.log

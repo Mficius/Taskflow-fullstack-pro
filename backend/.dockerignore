@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+.git
+.github
+vendor
+node_modules
+storage/logs/*
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+tests
+coverage.xml
+*.log
+Dockerfile*
+docker-entrypoint*.sh

@@ -1,0 +1,15 @@
+aws_region = "eu-west-3"
+
+github_owner = "Mficius"
+github_repo  = "taskflow"
+
+# true  = démonstration/portfolio : tout se détruit proprement (make demo-down)
+# false = production : protection contre la suppression, snapshot final RDS, ECR conservé
+demo_mode = true
+
+# certificate_arn = "arn:aws:acm:eu-west-3:123456789012:certificate/xxxx"
+# app_url         = "https://taskflow.example.com"
+# alert_email     = "ops@example.com"
+# admin_email     = "admin@example.com"
+# db_multi_az     = true
+# create_github_oidc_provider = false   # si le provider existe déjà dans le compte

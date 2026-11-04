@@ -13,10 +13,27 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        $admin = User::updateOrCreate(
-            ['email' => 'admin@taskflow.local'],
-            ['name' => 'Admin User', 'password' => Hash::make('admin123'), 'role' => 'admin', 'status' => 'active']
+        // Sécurité : aucun mot de passe en dur en production.
+        // L'admin est créé à partir de SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD ;
+        // les comptes de démo (mots de passe faibles) n'existent qu'hors production.
+        $isProd = app()->environment('production');
+        $adminPassword = env('SEED_ADMIN_PASSWORD');
+
+        if ($isProd && (!$adminPassword || strlen($adminPassword) < 12)) {
+            throw new \RuntimeException('SEED_ADMIN_PASSWORD (12 caractères minimum) est requis en production.');
+        }
+
+        // En production, l'admin n'est créé qu'une fois : un redéploiement ne réinitialise jamais son mot de passe.
+        $upsert = $isProd ? 'firstOrCreate' : 'updateOrCreate';
+        $admin = User::$upsert(
+            ['email' => env('SEED_ADMIN_EMAIL', 'admin@taskflow.local')],
+            ['name' => 'Admin User', 'password' => Hash::make($adminPassword ?: 'admin123'), 'role' => 'admin', 'status' => 'active']
         );
+
+        if ($isProd) {
+            return;
+        }
+
         $manager = User::updateOrCreate(
             ['email' => 'manager@taskflow.local'],
             ['name' => 'Project Manager', 'password' => Hash::make('manager123'), 'role' => 'manager', 'status' => 'active']

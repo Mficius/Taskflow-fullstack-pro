@@ -1,69 +1,41 @@
-# Etape composer
+# syntax=docker/dockerfile:1.7
+# ─────────────────────────────────────────────────────────────
+# TaskFlow API — image de production (PHP-FPM, Alpine, non-root)
+# ─────────────────────────────────────────────────────────────
 
-FROM composer:2.10 AS vendorsave
-
+# 1) Dépendances Composer (sans dev)
+FROM composer:2 AS vendor
 WORKDIR /app
-
 COPY composer.json composer.lock ./
-
-# 2. Installer les dépendances (cette étape restera en cache si vos dépendances ne changent pas)
-RUN composer install  \
-    --no-dev  \
-    --optimize-autoloader \
-    --prefer-dist \ 
-    --no-scripts \
-    --no-autoloader
-
-# 3. Copier le reste du code source de l'application
+RUN composer install \
+      --no-dev --no-interaction --no-progress --no-scripts \
+      --prefer-dist --optimize-autoloader --no-autoloader
 COPY . .
+RUN composer dump-autoload --optimize --classmap-authoritative --no-dev
 
-# 4. Générer l'autoloader final avec votre code
-RUN composer dump-autoload --optimize --no-dev
-# Etape php Etape finale
+# 2) Image finale : uniquement le runtime (pas de compilateur, git, pcov…)
+FROM php:8.4-fpm-alpine AS runtime
+COPY --from=ghcr.io/mlocati/php-extension-installer:latest /usr/bin/install-php-extensions /usr/local/bin/
+RUN install-php-extensions pdo_mysql bcmath opcache pcntl \
+ && apk add --no-cache curl fcgi \
+ && rm -rf /var/cache/apk/* /usr/local/bin/install-php-extensions
 
-FROM php:8.4-fpm-alpine3.23
-
-RUN apk add --no-cache \
-    bash \
-    curl \
-    libpng-dev \
-    libjpeg-turbo-dev \
-    freetype-dev \
-    oniguruma-dev \
-    libxml2-dev \
-    zip \
-    unzip \
-    git \
-    $PHPIZE_DEPS \
- && apk update && apk upgrade --no-cache
-
-
-RUN pecl install pcov && docker-php-ext-enable pcov
-
-RUN docker-php-ext-install pdo \
-    pdo_mysql \
-    mbstring \
-    xml \
-    pcntl \
-    exif \
-    bcmath
-
+COPY docker/php.ini /usr/local/etc/php/conf.d/zz-taskflow.ini
+COPY docker/php-fpm-status.conf /usr/local/etc/php-fpm.d/zz-status.conf
 
 WORKDIR /var/www/html
+COPY --from=vendor --chown=www-data:www-data /app .
+COPY --chown=root:root --chmod=0755 docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
-# copier le dossier vendor
-COPY --from=vendorsave /app . 
-
-# Optimiser laravel
-
-RUN php artisan package:discover --ansi && \
-    php artisan config:cache || true && \
-    php artisan route:cache || true && \
-    php artisan view:cache || true \
-    && chown -R www-data:www-data /var/www/html 
+# Le cache de config/routes est généré AU DÉMARRAGE (entrypoint), pas au build :
+# sinon les variables d'environnement du serveur seraient ignorées.
+RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
+ && chown -R www-data:www-data storage bootstrap/cache \
+ && chmod -R ug+rwX storage bootstrap/cache
 
 USER www-data
-
 EXPOSE 9000
-
+HEALTHCHECK --interval=15s --timeout=3s --start-period=30s --retries=5 \
+  CMD SCRIPT_NAME=/ping SCRIPT_FILENAME=/ping REQUEST_METHOD=GET cgi-fcgi -bind -connect 127.0.0.1:9000 | grep -q pong || exit 1
+ENTRYPOINT ["entrypoint.sh"]
 CMD ["php-fpm"]

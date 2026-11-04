@@ -1,0 +1,9 @@
+# Règles ZAP : id	ACTION (IGNORE|WARN|FAIL)	commentaire
+10049	IGNORE	(Non-Storable Content) normal pour une API JSON authentifiée
+10096	IGNORE	(Timestamp Disclosure) bruit sur les assets Vite
+90004	WARN	(Spectre/site isolation) informatif
+40012	FAIL	XSS réfléchi
+40014	FAIL	XSS persistant
+40018	FAIL	Injection SQL
+90019	FAIL	Injection de code côté serveur
+90020	FAIL	Injection de commandes

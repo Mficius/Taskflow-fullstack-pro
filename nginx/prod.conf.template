@@ -1,0 +1,76 @@
+# Passerelle de production (ECS Fargate) : frontend statique + API Laravel (PHP-FPM).
+# Les variables ${BACKEND_HOST}, ${FRONTEND_HOST}, ${LISTEN_PORT} sont substituées au démarrage du conteneur
+# (mécanisme des templates de l'image officielle nginx) ; les variables nginx ($scheme, $host…) ne sont pas touchées.
+limit_req_zone $binary_remote_addr zone=login:10m rate=10r/m;
+limit_req_zone $binary_remote_addr zone=api:10m rate=20r/s;
+
+# Derrière l'ALB : on récupère l'IP réelle et le schéma d'origine.
+set_real_ip_from 10.0.0.0/8;
+real_ip_header X-Forwarded-For;
+real_ip_recursive on;
+map $http_x_forwarded_proto $fwd_proto { default $scheme; https https; }
+
+server_tokens off;
+
+server {
+    listen ${LISTEN_PORT} default_server;
+    server_name _;
+    client_max_body_size 10m;
+
+    # En-têtes de sécurité
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'" always;
+
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript image/svg+xml;
+
+    # Healthcheck ALB (Laravel /up)
+    location = /up {
+        access_log off;
+        include fastcgi_params;
+        fastcgi_pass ${BACKEND_HOST}:9000;
+        fastcgi_param SCRIPT_FILENAME /var/www/html/public/index.php;
+        fastcgi_param SCRIPT_NAME /index.php;
+        fastcgi_param REQUEST_URI $request_uri;
+        fastcgi_param HTTP_X_FORWARDED_PROTO $fwd_proto;
+    }
+
+    # Anti brute-force sur le login
+    location = /api/auth/login {
+        limit_req zone=login burst=5 nodelay;
+        limit_req_status 429;
+        include fastcgi_params;
+        fastcgi_pass ${BACKEND_HOST}:9000;
+        fastcgi_param SCRIPT_FILENAME /var/www/html/public/index.php;
+        fastcgi_param SCRIPT_NAME /index.php;
+        fastcgi_param REQUEST_URI $request_uri;
+        fastcgi_param HTTP_X_FORWARDED_PROTO $fwd_proto;
+    }
+
+    # API Laravel
+    location /api/ {
+        limit_req zone=api burst=40 nodelay;
+        limit_req_status 429;
+        include fastcgi_params;
+        fastcgi_pass ${BACKEND_HOST}:9000;
+        fastcgi_param SCRIPT_FILENAME /var/www/html/public/index.php;
+        fastcgi_param SCRIPT_NAME /index.php;
+        fastcgi_param REQUEST_URI $request_uri;
+        fastcgi_param HTTP_X_FORWARDED_PROTO $fwd_proto;
+        fastcgi_read_timeout 60s;
+    }
+
+    # Frontend (conteneur nginx-unprivileged)
+    location / {
+        proxy_pass http://${FRONTEND_HOST}:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $fwd_proto;
+    }
+
+    location ~ /\.(?!well-known) { deny all; }
+}

@@ -1,0 +1,65 @@
+# Plan d'automatisation OWASP ZAP : scan actif authentifié de l'API TaskFlow.
+# ${ZAP_TOKEN} est fourni par l'environnement (jeton Sanctum éphémère du compte de test).
+env:
+  contexts:
+    - name: taskflow
+      urls: ["http://localhost:8080"]
+      includePaths: ["http://localhost:8080.*"]
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    progressToStdout: true
+
+jobs:
+  - type: replacer
+    parameters:
+      deleteAllRules: true
+    rules:
+      - description: Authorization Bearer
+        matchType: req_header
+        matchString: Authorization
+        matchRegex: false
+        replacementString: "Bearer ${ZAP_TOKEN}"
+
+  - type: openapi
+    parameters:
+      apiFile: /zap/wrk/docs/openapi.yaml
+      targetUrl: http://localhost:8080/api
+      context: taskflow
+
+  - type: spider
+    parameters:
+      context: taskflow
+      url: http://localhost:8080
+      maxDuration: 3
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 5
+
+  - type: activeScan
+    parameters:
+      context: taskflow
+      maxRuleDurationInMins: 2
+      maxScanDurationInMins: 15
+    policyDefinition:
+      defaultStrength: Low
+      defaultThreshold: Medium
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 2
+
+  - type: report
+    parameters:
+      template: traditional-json
+      reportDir: /zap/wrk/zap-out
+      reportFile: zap-report
+    risks: [high, medium, low]
+
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: /zap/wrk/zap-out
+      reportFile: zap-report
+    risks: [high, medium, low]

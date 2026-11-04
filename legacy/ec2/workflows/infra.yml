@@ -1,0 +1,217 @@
+name: Infra (Terraform)
+
+# Chaîne « shift-left » avant toute création de ressource :
+#   1. iac-security  : Trivy + Checkov + Snyk IaC sur le code Terraform (aucun accès AWS)
+#   2. plan          : fmt/validate, terraform plan, puis CONTRÔLES PRÉVENTIFS (OPA/Conftest) sur le plan
+#   3. apply         : approbation humaine, re-plan, mêmes contrôles préventifs, puis apply du plan vérifié
+# Premier apply (création des rôles OIDC et du bucket d'état) : manuel, voir docs/runbook.md.
+on:
+  pull_request:
+    paths: ["infrastructure/**", "scripts/policy-check.sh", ".trivyignore", ".checkov.yaml", ".github/workflows/infra.yml"]
+  push:
+    branches: [main]
+    paths: ["infrastructure/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.10.5"
+  TF_IN_AUTOMATION: "true"
+  TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+  TF_VAR_github_owner: ${{ github.repository_owner }}
+  TF_VAR_github_repo: ${{ github.event.repository.name }}
+  TF_VAR_tf_state_bucket: ${{ vars.TF_STATE_BUCKET }}
+  TF_VAR_create_github_oidc_provider: ${{ vars.TF_CREATE_OIDC_PROVIDER || 'true' }} # doit rester identique au premier apply manuel
+  TF_VAR_certificate_arn: ${{ vars.TF_CERTIFICATE_ARN }}
+  TF_VAR_app_url: ${{ vars.TF_APP_URL }}
+  TF_VAR_alert_email: ${{ vars.TF_ALERT_EMAIL }}
+  TF_VAR_admin_email: ${{ vars.TF_ADMIN_EMAIL || 'admin@taskflow.local' }}
+
+jobs:
+  # ── 1. Sécurité de l'IaC : AVANT de planifier, a fortiori de créer ──────────
+  iac-security:
+    name: Scan de l'IaC (Trivy · Checkov · Snyk)
+    runs-on: ubuntu-latest
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy — misconfigurations Terraform (bloquant HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: infrastructure/terraform
+          severity: HIGH,CRITICAL
+          trivyignores: .trivyignore
+          exit-code: "1"
+          format: table
+
+      - name: Trivy — secrets dans l'infra (bloquant)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: infrastructure
+          scanners: secret
+          exit-code: "1"
+
+      - name: Checkov — politiques CIS/AWS (bloquant)
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          config_file: .checkov.yaml
+          soft_fail: false
+          output_format: cli
+
+      - name: Snyk IaC (bloquant HIGH+)
+        if: env.SNYK_TOKEN != ''
+        uses: snyk/actions/setup@0.4.0
+      - name: Snyk IaC — analyse
+        if: env.SNYK_TOKEN != ''
+        run: snyk iac test infrastructure/terraform --severity-threshold=high
+      - name: Snyk ignoré (SNYK_TOKEN absent)
+        if: env.SNYK_TOKEN == ''
+        run: echo "::notice::Ajoutez le secret SNYK_TOKEN pour activer Snyk IaC."
+
+  # ── 2. Plan + contrôles préventifs ──────────────────────────────────────────
+  plan:
+    name: terraform plan + contrôles préventifs
+    needs: iac-security
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    defaults:
+      run: { working-directory: infrastructure/terraform }
+    outputs:
+      has_changes: ${{ steps.plan.outputs.exitcode == '2' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Vérifications statiques
+        run: |
+          terraform fmt -check -recursive -diff
+          terraform init -backend=false -input=false
+          terraform validate
+
+      - name: Tests unitaires des politiques (aucun accès AWS)
+        run: |
+          tmp="$(mktemp -d)"
+          curl -fsSL "https://github.com/open-policy-agent/conftest/releases/download/v0.56.0/conftest_0.56.0_Linux_x86_64.tar.gz" | tar -xz -C "$tmp" conftest
+          sudo install "$tmp/conftest" /usr/local/bin/conftest
+          conftest verify -p ../policy
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TF_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-tf-plan-${{ github.run_id }}
+
+      - name: Init (backend S3)
+        env:
+          STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: |
+          rm -rf .terraform
+          terraform init -input=false \
+            -backend-config="bucket=$STATE_BUCKET" \
+            -backend-config="key=prod/terraform.tfstate" \
+            -backend-config="region=$AWS_REGION" \
+            -backend-config="use_lockfile=true" \
+            -backend-config="encrypt=true"
+
+      - name: Plan
+        id: plan
+        run: |
+          set +e
+          terraform plan -input=false -lock-timeout=120s -no-color -detailed-exitcode -out=tfplan > plan.txt
+          code=$?
+          set -e
+          cat plan.txt
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"   # 0 = rien à faire, 2 = changements, 1 = erreur
+          [ "$code" -ne 1 ]
+
+      - name: Contrôles préventifs (OPA/Conftest) — bloque si une règle est violée
+        run: ../../scripts/policy-check.sh tfplan
+
+      - name: Résumé
+        if: always()
+        run: |
+          {
+            echo "### Terraform plan"
+            echo '```'
+            tail -n 80 plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commentaire sur la PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('infrastructure/terraform/plan.txt', 'utf8').split('\n').slice(-60).join('\n');
+            await github.rest.issues.createComment({
+              ...context.repo, issue_number: context.issue.number,
+              body: '#### Terraform plan\n```\n' + plan + '\n```'
+            });
+
+      - name: Nettoyage (le plan contient des valeurs sensibles)
+        if: always()
+        run: rm -f tfplan plan.txt
+
+  # ── 3. Apply : approbation, re-plan, mêmes contrôles, apply du plan vérifié ─
+  apply:
+    name: terraform apply
+    needs: plan
+    if: >-
+      needs.plan.outputs.has_changes == 'true' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment:
+      name: infra-production # ← relecteurs obligatoires dans les réglages GitHub
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run: { working-directory: infrastructure/terraform }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TF_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-tf-apply-${{ github.run_id }}
+      - name: Init
+        env:
+          STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=$STATE_BUCKET" \
+            -backend-config="key=prod/terraform.tfstate" \
+            -backend-config="region=$AWS_REGION" \
+            -backend-config="use_lockfile=true" \
+            -backend-config="encrypt=true"
+      - name: Plan (frais, juste avant l'apply)
+        run: terraform plan -input=false -lock-timeout=300s -out=tfplan
+      - name: Contrôles préventifs sur CE plan
+        run: ../../scripts/policy-check.sh tfplan
+      - name: Apply du plan vérifié (et uniquement de celui-ci)
+        run: terraform apply -input=false tfplan
+      - name: Nettoyage
+        if: always()
+        run: rm -f tfplan

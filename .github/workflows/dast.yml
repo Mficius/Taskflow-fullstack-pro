@@ -1,0 +1,108 @@
+name: DAST (OWASP ZAP)
+
+# Scan dynamique : la VRAIE application (images de production) est démarrée dans le runner,
+# puis attaquée. Le scan ACTIF n'a lieu que sur cette pile éphémère, jamais sur la production.
+on:
+  pull_request:
+    paths: ["backend/**", "frontend/**", "nginx/**", "docker-compose.ci.yml", ".zap/**", "docs/openapi.yaml", ".github/workflows/dast.yml"]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 2 * * 1" # chaque lundi, 02:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dast-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zap:
+    name: ZAP baseline + API scan authentifié
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      issues: write # les actions ZAP publient un ticket de synthèse
+    env:
+      DAST_USER: dast@taskflow.test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Générer les secrets éphémères
+        run: |
+          {
+            echo "APP_KEY=base64:$(openssl rand -base64 32)"
+            echo "DB_PASSWORD=$(openssl rand -hex 16)"
+            echo "DAST_PASSWORD=$(openssl rand -hex 16)"
+          } >> "$GITHUB_ENV"
+
+      - name: nginx sans rate-limit (évite de fausser le scan)
+        run: sed '/limit_req/d' nginx/prod.conf > nginx/ci.conf
+
+      - name: Démarrer l'application (images de production)
+        run: docker compose -f docker-compose.ci.yml up -d --build
+
+      - name: Attendre /up
+        run: |
+          for i in $(seq 1 60); do
+            curl -fsS -o /dev/null http://localhost:8080/up && exit 0
+            sleep 3
+          done
+          docker compose -f docker-compose.ci.yml logs --tail=80 backend nginx
+          echo "::error::L'application ne démarre pas"; exit 1
+
+      - name: Obtenir un jeton pour le scan authentifié
+        run: |
+          TOKEN=$(curl -fsS -X POST http://localhost:8080/api/auth/login \
+            -H 'Content-Type: application/json' -H 'Accept: application/json' \
+            -d "{\"email\":\"$DAST_USER\",\"password\":\"$DAST_PASSWORD\"}" | jq -r '.access_token')
+          [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ] || { echo "::error::Connexion impossible "; exit 1; }
+          echo "::add-mask::$TOKEN"
+          echo "ZAP_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: ZAP baseline (frontend, passif — rapport)
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: http://localhost:8080
+          rules_file_name: .zap/rules.tsv
+          cmd_options: -a
+          allow_issue_writing: false
+          artifact_name: zap-baseline-report
+          fail_action: false
+
+      - name: ZAP scan actif authentifié de l'API (plan d'automatisation)
+        run: |
+          mkdir -p zap-out && chmod 777 zap-out
+          docker run --rm --network host \
+            -v "$PWD:/zap/wrk:rw" -e ZAP_TOKEN \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap.sh -cmd -autorun /zap/wrk/.zap/plan.yaml
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-api-report
+          path: zap-out/
+
+      - name: Gate — échec si alerte HIGH
+        run: |
+          HIGH=$(jq '[.site[].alerts[] | select(.riskcode=="3")] | length' zap-out/zap-report.json)
+          MED=$(jq '[.site[].alerts[] | select(.riskcode=="2")] | length' zap-out/zap-report.json)
+          {
+            echo "### DAST — résultat ZAP"
+            echo "- High : **$HIGH**"
+            echo "- Medium : **$MED**"
+          } >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.site[].alerts[] | select(.riskcode=="3") | "HIGH: \(.name) (\(.instances|length) occurrence(s))"' zap-out/zap-report.json
+          [ "$HIGH" -eq 0 ]
+
+      - name: Logs de l'application en cas d'échec
+        if: failure()
+        run: docker compose -f docker-compose.ci.yml logs --tail=100
+
+      - name: Arrêt
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v

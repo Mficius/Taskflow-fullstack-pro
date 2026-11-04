@@ -1,0 +1,12 @@
+aws_region    = "eu-west-3"
+environment   = "prod"
+instance_type = "t3.medium"
+
+github_owner = "Mficius"
+github_repo  = "taskflow"
+
+# certificate_arn = "arn:aws:acm:eu-west-3:123456789012:certificate/xxxx"
+# app_url         = "https://taskflow.example.com"
+# alert_email     = "ops@example.com"
+# admin_email     = "admin@example.com"
+# create_github_oidc_provider = false   # si le provider existe déjà dans le compte

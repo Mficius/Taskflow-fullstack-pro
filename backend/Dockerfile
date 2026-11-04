@@ -14,7 +14,7 @@ COPY . .
 RUN composer dump-autoload --optimize --classmap-authoritative --no-dev
 
 # 2) Image finale : uniquement le runtime (pas de compilateur, git, pcov…)
-FROM php:8.4-fpm-alpine AS runtime
+FROM php:8.5-fpm-alpine AS runtime
 COPY --from=ghcr.io/mlocati/php-extension-installer:latest /usr/bin/install-php-extensions /usr/local/bin/
 RUN install-php-extensions pdo_mysql bcmath opcache pcntl \
  && apk add --no-cache curl fcgi \

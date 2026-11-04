@@ -1,5 +1,5 @@
 # TaskFlow API — image de DÉVELOPPEMENT (Apache + code monté en volume)
-FROM php:8.4-apache
+FROM php:8.5-apache
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libzip-dev libonig-dev unzip git \

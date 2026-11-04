@@ -146,7 +146,7 @@ jobs:
           args: --severity-threshold=high --file=backend/composer.lock
 
       - name: Snyk Frontend Scan
-        uses: snyk/actions/node@ce71ff9eda12bc48837b2855bca31364cdfa93e2
+        uses: snyk/actions/node@11b673cfb4b0dc0d860a1323caa199d54950dcce
         # continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

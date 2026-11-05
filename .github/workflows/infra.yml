@@ -70,7 +70,7 @@ jobs:
 
       - name: Snyk IaC (bloquant HIGH+)
         if: env.SNYK_TOKEN != ''
-        uses: snyk/actions/setup@0.4.0
+        uses: snyk/actions/setup@v1.0.0
       - name: Snyk IaC — analyse
         if: env.SNYK_TOKEN != ''
         run: snyk iac test infrastructure/terraform --severity-threshold=high

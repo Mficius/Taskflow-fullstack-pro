@@ -175,7 +175,6 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-
   build-and-push:
     name: Docker - Build, scan & publish
     if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
@@ -207,9 +206,9 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Install Trivy
-        uses: aquasecurity/trivy-action@0.35.0
-
+      # ------------------------------------
+      # BUILD & SCAN API LARAVEL
+      # ------------------------------------
       - name: Build Laravel API image
         uses: docker/build-push-action@v6
         with:
@@ -221,15 +220,24 @@ jobs:
           cache-to: type=gha,mode=max,scope=taskflow-api
 
       - name: Scan Laravel API image - Trivy
-        run: trivy image --exit-code 1 --ignore-unfixed --severity CRITICAL,HIGH "$IMAGE"
-        env:
-          IMAGE: ${{ secrets.DOCKER_USERNAME }}/laravel-api:${{ github.sha }}
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ${{ secrets.DOCKER_USERNAME }}/laravel-api:${{ github.sha }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
 
       - name: Generate Laravel API SBOM
-        run: trivy image --format cyclonedx --output sbom-api.cdx.json "$IMAGE"
-        env:
-          IMAGE: ${{ secrets.DOCKER_USERNAME }}/laravel-api:${{ github.sha }}
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ${{ secrets.DOCKER_USERNAME }}/laravel-api:${{ github.sha }}
+          format: 'cyclonedx'
+          output: 'sbom-api.cdx.json'
 
+      # ------------------------------------
+      # BUILD & SCAN FRONTEND REACT
+      # ------------------------------------
       - name: Build React frontend image
         uses: docker/build-push-action@v6
         with:
@@ -241,15 +249,24 @@ jobs:
           cache-to: type=gha,mode=max,scope=taskflow-frontend
 
       - name: Scan React frontend image - Trivy
-        run: trivy image --exit-code 1 --ignore-unfixed --severity CRITICAL,HIGH "$IMAGE"
-        env:
-          IMAGE: ${{ secrets.DOCKER_USERNAME }}/react-frontend:${{ github.sha }}
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ${{ secrets.DOCKER_USERNAME }}/react-frontend:${{ github.sha }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
 
       - name: Generate React frontend SBOM
-        run: trivy image --format cyclonedx --output sbom-frontend.cdx.json "$IMAGE"
-        env:
-          IMAGE: ${{ secrets.DOCKER_USERNAME }}/react-frontend:${{ github.sha }}
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: ${{ secrets.DOCKER_USERNAME }}/react-frontend:${{ github.sha }}
+          format: 'cyclonedx'
+          output: 'sbom-frontend.cdx.json'
 
+      # ------------------------------------
+      # UPLOAD SBOM & PUSH IMAGES
+      # ------------------------------------
       - name: Upload image SBOMs
         uses: actions/upload-artifact@v4
         with:

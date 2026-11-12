@@ -208,7 +208,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Install Trivy
-        uses: aquasecurity/setup-trivy@v0.2.2
+        uses: aquasecurity/trivy-action@0.35.0
 
       - name: Build Laravel API image
         uses: docker/build-push-action@v6

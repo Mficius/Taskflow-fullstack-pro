@@ -2,13 +2,12 @@
 # Remplacer les valeurs REPLACE_* avec les outputs Terraform avant le premier bootstrap.
 image:
   registry: docker.io
-  tag: bootstrap
+  tag: 88a27510f3818bc33e120a54b7a16d459af28d1f
   pullPolicy: IfNotPresent
-
 api:
   image:
-    repository: REPLACE_WITH_DOCKERHUB_USERNAME/laravel-api
-    digest: ""
+    repository: cloudopsenglab/laravel-api
+    digest: "sha256:81bf86f7a2faae5eff6b653d3777d270437363b5f449d718bb50a903f2d27f7a"
   replicas: 2
   config:
     APP_ENV: production
@@ -24,20 +23,16 @@ api:
     AWS_STS_REGIONAL_ENDPOINTS: regional
     AWS_BUCKET: REPLACE_WITH_APP_FILES_BUCKET
     MYSQL_ATTR_SSL_CA: /etc/ssl/certs/rds-global-bundle.pem
-
 frontend:
   image:
-    repository: REPLACE_WITH_DOCKERHUB_USERNAME/react-frontend
-    digest: ""
+    repository: cloudopsenglab/react-frontend
+    digest: "sha256:b33553a1b9b73b30ae123a237afef1e4754d9ad0fd65dbed35986e724d2ad254"
   replicas: 2
-
 worker:
   enabled: true
   replicas: 2
-
 adminBootstrap:
   enabled: false
-
 secrets:
   external:
     enabled: true
@@ -45,24 +40,19 @@ secrets:
     appSecretName: taskflow/prod/laravel
     dbAppSecretArn: REPLACE_WITH_RDS_APP_SECRET_ARN
     dbMigratorSecretArn: REPLACE_WITH_RDS_MIGRATOR_SECRET_ARN
-
 serviceAccount:
   apiRoleArn: REPLACE_WITH_TASKFLOW_APP_IRSA_ROLE_ARN
-
 targetGroupBinding:
   enabled: true
   frontendArn: REPLACE_WITH_FRONTEND_TG_ARN
   apiArn: REPLACE_WITH_API_TG_ARN
-
 networkPolicy:
   enabled: true
   albCidr: 10.20.0.0/16
   dbCidr: 10.20.128.0/18
   awsServicesCidr: 10.20.0.0/16
-
 pdb:
   enabled: true
   minAvailable: 1
-
 mysql:
   enabled: false

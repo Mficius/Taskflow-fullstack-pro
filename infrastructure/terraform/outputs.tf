@@ -1,67 +1,66 @@
-output "app_url" {
-  description = "URL publique de l'application."
-  value       = local.app_url
+output "vpc_id" {
+  value = aws_vpc.main.id
+}
+
+output "eks_cluster_name" {
+  value = aws_eks_cluster.main.name
+}
+
+output "eks_cluster_endpoint" {
+  value = aws_eks_cluster.main.endpoint
 }
 
 output "alb_dns_name" {
-  value = aws_lb.main.dns_name
+  description = "DNS de l'ALB (créer un CNAME/ALIAS vers cette valeur)."
+  value       = aws_lb.main.dns_name
 }
 
-output "ecr_repository_urls" {
-  value = { for k, r in aws_ecr_repository.app : k => r.repository_url }
-}
-
-output "ecs_cluster" {
-  value = aws_ecs_cluster.main.name
-}
-
-output "ecs_service" {
-  value = aws_ecs_service.app.name
+output "alb_target_group_arns" {
+  description = "ARN à renseigner dans values-eks.yaml (targetGroupBinding)."
+  value = {
+    frontend = aws_lb_target_group.frontend.arn
+    api      = aws_lb_target_group.api.arn
+  }
 }
 
 output "rds_endpoint" {
   value = aws_db_instance.main.address
 }
 
-output "dashboard_url" {
-  value = "https://${var.aws_region}.console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#dashboards:name=${aws_cloudwatch_dashboard.main.dashboard_name}"
+output "rds_master_secret_arn" {
+  description = "Secret Manager contenant le mot de passe RDS (géré par AWS)."
+  value       = aws_db_instance.main.master_user_secret[0].secret_arn
 }
 
-output "github_oidc_role_arns" {
-  value = {
-    ecr_push = aws_iam_role.gha_ecr.arn
-    deploy   = aws_iam_role.gha_deploy.arn
-  }
+output "app_secret_name" {
+  value = aws_secretsmanager_secret.app.name
 }
 
-# À copier dans GitHub → Settings → Secrets and variables → Actions → Variables
-# (ou chargé automatiquement par `make demo-up`).
-output "github_actions_variables" {
-  description = "Variables (non secrètes) à créer dans GitHub Actions."
-  value = {
-    AWS_REGION          = var.aws_region
-    AWS_ECR_ROLE_ARN    = aws_iam_role.gha_ecr.arn
-    AWS_DEPLOY_ROLE_ARN = aws_iam_role.gha_deploy.arn
-    APP_URL             = local.app_url
-    ECS_CLUSTER         = aws_ecs_cluster.main.name
-    ECS_SERVICE         = aws_ecs_service.app.name
-    ECS_APP_FAMILY      = aws_ecs_task_definition.app.family
-    ECS_MIGRATE_FAMILY  = aws_ecs_task_definition.migrate.family
-    ECS_SUBNETS         = join(",", aws_subnet.public[*].id)
-    ECS_SECURITY_GROUP  = aws_security_group.app.id
-  }
+output "github_role_arns" {
+  description = "À copier dans les variables du dépôt GitHub (Settings > Variables)."
+  value       = { for k, r in aws_iam_role.github : k => r.arn }
 }
 
-output "secrets_ssm_prefix" {
-  description = "Identifiants admin TaskFlow : aws ssm get-parameter --with-decryption --name <prefix>/seed_admin_password"
-  value       = local.ssm_prefix
+output "irsa_role_arns" {
+  value = { for k, r in aws_iam_role.irsa : k => r.arn }
 }
 
-output "github_infra_pipeline_variables" {
-  description = "Variables GitHub pour .github/workflows/infra.yml (vide tant que tf_state_bucket n'est pas défini)."
-  value = local.infra_pipeline == 1 ? {
-    TF_STATE_BUCKET       = var.tf_state_bucket
-    AWS_TF_PLAN_ROLE_ARN  = aws_iam_role.gha_tf_plan[0].arn
-    AWS_TF_APPLY_ROLE_ARN = aws_iam_role.gha_tf_apply[0].arn
-  } : {}
+output "ops_instance_id" {
+  value = var.enable_ops_host ? aws_instance.ops[0].id : null
+}
+
+output "rds_app_secret_arn" {
+  description = "Secret JSON username/password du compte SQL applicatif TaskFlow."
+  value       = aws_secretsmanager_secret.db_app.arn
+}
+
+output "app_files_bucket" {
+  description = "Bucket S3 privé pour les fichiers téléversés par TaskFlow."
+  value       = aws_s3_bucket.app_files.bucket
+}
+
+
+output "rds_migrator_secret_arn" {
+  description = "Secret JSON du compte MySQL réservé aux migrations."
+  value       = aws_secretsmanager_secret.db_migrator.arn
 }

@@ -1,0 +1,9 @@
+apiVersion: v2
+name: taskflow
+description: TaskFlow - Laravel API (php-fpm + nginx sidecar), React frontend, queue worker, migrations
+type: application
+version: 1.0.0
+appVersion: "0.0.0"   # surchargé par --set image.tag=<sha> au déploiement
+keywords: [taskflow, laravel, react]
+maintainers:
+  - name: TaskFlow DevOps

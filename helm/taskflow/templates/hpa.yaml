@@ -1,0 +1,23 @@
+{{- $fn := include "taskflow.fullname" . }}
+{{- range $n := list "api" "frontend" }}
+{{- $cfg := index $.Values $n }}
+{{- if $cfg.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $fn }}-{{ $n }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "taskflow.labels" $ | nindent 4 }}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: {{ $fn }}-{{ $n }}}
+  minReplicas: {{ $cfg.autoscaling.minReplicas }}
+  maxReplicas: {{ $cfg.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource: {name: cpu, target: {type: Utilization, averageUtilization: {{ $cfg.autoscaling.targetCPUUtilizationPercentage }}}}
+  behavior:
+    scaleDown: {stabilizationWindowSeconds: 300}
+---
+{{- end }}
+{{- end }}

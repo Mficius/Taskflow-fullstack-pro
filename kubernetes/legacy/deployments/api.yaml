@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskflow-api
+  namespace: taskflow
+  labels: &labels
+    app.kubernetes.io/name: taskflow-api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: taskflow
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: taskflow-api
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      serviceAccountName: taskflow-api
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 82        # www-data (php-fpm alpine)
+        runAsGroup: 82
+        fsGroup: 82
+        seccompProfile: {type: RuntimeDefault}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: taskflow-api
+      containers:
+        - name: php-fpm
+          image: ACCOUNT_ID.dkr.ecr.eu-west-3.amazonaws.com/taskflow/laravel-api:0.0.0-replace-me
+          imagePullPolicy: IfNotPresent
+          args: ["php-fpm"]
+          ports:
+            - {name: fastcgi, containerPort: 9000}
+          envFrom:
+            - configMapRef: {name: taskflow-api-config}
+            - secretRef: {name: taskflow-api-secrets}
+          securityContext: &sec
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 192Mi}
+            limits: {cpu: 500m, memory: 384Mi}
+          startupProbe:
+            tcpSocket: {port: 9000}
+            periodSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket: {port: 9000}
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: 9000}
+            periodSeconds: 15
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: storage, mountPath: /var/www/html/storage}
+            - {name: bootstrap-cache, mountPath: /var/www/html/bootstrap/cache}
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {name: http, containerPort: 8080}
+          securityContext: *sec
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 96Mi}
+          readinessProbe:
+            httpGet: {path: /up, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /up, port: http}
+            periodSeconds: 20
+            failureThreshold: 3
+          volumeMounts:
+            - {name: nginx-conf, mountPath: /etc/nginx/conf.d/default.conf, subPath: default.conf, readOnly: true}
+            - {name: nginx-tmp, mountPath: /tmp}
+      volumes:
+        - {name: tmp, emptyDir: {sizeLimit: 64Mi}}
+        - {name: storage, emptyDir: {sizeLimit: 256Mi}}
+        - {name: bootstrap-cache, emptyDir: {sizeLimit: 32Mi}}
+        - {name: nginx-tmp, emptyDir: {sizeLimit: 32Mi}}
+        - name: nginx-conf
+          configMap: {name: taskflow-api-nginx}

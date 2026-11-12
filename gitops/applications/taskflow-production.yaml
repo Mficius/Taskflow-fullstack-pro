@@ -1,0 +1,52 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: taskflow
+  namespace: argocd
+spec:
+  description: TaskFlow production workloads
+  sourceRepos:
+    - https://github.com/Mficius/Taskflow-fullstack-pro.git
+  destinations:
+    - namespace: taskflow
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: taskflow-production
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: taskflow
+  source:
+    repoURL: https://github.com/Mficius/Taskflow-fullstack-pro.git
+    targetRevision: main
+    path: helm/taskflow
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-eks.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: taskflow
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+      - PruneLast=true
+  ignoreDifferences:
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+      jsonPointers:
+        - /spec/metrics

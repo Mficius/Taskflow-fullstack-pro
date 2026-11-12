@@ -1,104 +1,116 @@
-variable "aws_region" {
-  description = "Région AWS de déploiement."
-  type        = string
-  default     = "eu-west-3" # Paris
-}
-
-variable "project" {
-  description = "Nom du projet (préfixe des ressources)."
+variable "project_name" {
+  description = "Nom du projet (préfixe de toutes les ressources)."
   type        = string
   default     = "taskflow"
 }
 
 variable "environment" {
-  description = "Nom de l'environnement."
+  description = "Environnement cible."
   type        = string
   default     = "prod"
+
+  validation {
+    condition     = contains(["dev", "staging", "prod"], var.environment)
+    error_message = "environment doit valoir dev, staging ou prod."
+  }
 }
 
-# ── Réseau ──────────────────────────────────────────────────
+variable "aws_region" {
+  description = "Région AWS."
+  type        = string
+  default     = "eu-west-3"
+}
+
+variable "extra_tags" {
+  description = "Tags additionnels."
+  type        = map(string)
+  default     = {}
+}
+
+# ------------------------------- Réseau --------------------------------------
 variable "vpc_cidr" {
-  type    = string
-  default = "10.0.0.0/16"
+  description = "CIDR du VPC."
+  type        = string
+  default     = "10.20.0.0/16"
 }
 
-variable "public_subnet_cidrs" {
-  description = "Sous-réseaux publics (ALB + tâches Fargate). Deux AZ minimum."
-  type        = list(string)
-  default     = ["10.0.1.0/24", "10.0.2.0/24"]
+variable "az_count" {
+  description = "Nombre de zones de disponibilité (2 minimum pour ALB/RDS)."
+  type        = number
+  default     = 2
 
   validation {
-    condition     = length(var.public_subnet_cidrs) == 2
-    error_message = "Exactement deux sous-réseaux publics sont attendus."
+    condition     = var.az_count >= 2 && var.az_count <= 3
+    error_message = "az_count doit être 2 ou 3."
   }
 }
 
-variable "db_subnet_cidrs" {
-  description = "Sous-réseaux ISOLÉS pour RDS (aucune route vers Internet)."
-  type        = list(string)
-  default     = ["10.0.11.0/24", "10.0.12.0/24"]
-
-  validation {
-    condition     = length(var.db_subnet_cidrs) == 2
-    error_message = "Exactement deux sous-réseaux de base de données sont attendus."
-  }
-}
-
-variable "allowed_ingress_cidrs" {
-  description = "CIDR autorisés à joindre l'ALB (restreindre pour une préproduction)."
-  type        = list(string)
-  default     = ["0.0.0.0/0"]
-}
-
-variable "enable_flow_logs" {
-  description = "Active les VPC Flow Logs (trafic refusé) vers CloudWatch."
+variable "single_nat_gateway" {
+  description = "true = 1 NAT (économique, non HA) ; false = 1 NAT par AZ (HA)."
   type        = bool
   default     = true
 }
 
-variable "log_retention_days" {
-  type    = number
-  default = 14
-}
-
-# ── ECS Fargate ─────────────────────────────────────────────
-variable "task_cpu" {
-  description = "CPU de la tâche (256, 512, 1024…)."
-  type        = number
-  default     = 512
-}
-
-variable "task_memory" {
-  description = "Mémoire de la tâche en Mo (1024 minimum avec 512 CPU)."
-  type        = number
-  default     = 1024
-}
-
-variable "min_tasks" {
-  type    = number
-  default = 1
-}
-
-variable "max_tasks" {
-  type    = number
-  default = 3
-}
-
-variable "bootstrap_image_tag" {
-  description = "Tag initial des définitions de tâche (jamais exécuté : le service démarre à 0 ; la CD enregistre les vraies révisions)."
+# --------------------------------- EKS ---------------------------------------
+variable "eks_version" {
+  description = "Version Kubernetes du control plane."
   type        = string
-  default     = "bootstrap"
+  default     = "1.36"
 }
 
-# ── Base de données (RDS MySQL) ─────────────────────────────
-variable "db_engine_version" {
-  type    = string
-  default = "8.4"
+variable "eks_public_access_cidrs" {
+  description = "CIDR autorisés sur l'endpoint public de l'API EKS. 0.0.0.0/0 est interdit."
+  type        = list(string)
+
+  validation {
+    condition     = !contains(var.eks_public_access_cidrs, "0.0.0.0/0")
+    error_message = "0.0.0.0/0 est interdit pour l'endpoint API EKS (preventive control)."
+  }
+}
+
+variable "eks_endpoint_public_access" {
+  description = "false = API privée uniquement (déploiement depuis l'hôte ops / un runner dans le VPC)."
+  type        = bool
+  default     = true
+}
+
+variable "node_instance_types" {
+  description = "Types d'instances du node group."
+  type        = list(string)
+  default     = ["t3.medium"]
+}
+
+variable "node_min_size" {
+  type    = number
+  default = 2
+}
+
+variable "node_desired_size" {
+  type    = number
+  default = 2
+}
+
+variable "node_max_size" {
+  type    = number
+  default = 5
+}
+
+# --------------------------------- RDS ---------------------------------------
+variable "db_name" {
+  description = "Nom de la base applicative."
+  type        = string
+  default     = "taskflow"
+}
+
+variable "db_username" {
+  description = "Utilisateur maître RDS (réservé à l'administration et au bootstrap)."
+  type        = string
+  default     = "taskflow_admin"
 }
 
 variable "db_instance_class" {
   type    = string
-  default = "db.t4g.micro"
+  default = "db.t3.small"
 }
 
 variable "db_allocated_storage" {
@@ -106,10 +118,15 @@ variable "db_allocated_storage" {
   default = 20
 }
 
+variable "db_max_allocated_storage" {
+  type    = number
+  default = 100
+}
+
 variable "db_multi_az" {
-  description = "Multi-AZ (haute disponibilité de la base, ×2 le coût)."
+  description = "Multi-AZ (true par défaut ; false seulement pour dev)."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "db_backup_retention_days" {
@@ -117,90 +134,79 @@ variable "db_backup_retention_days" {
   default = 7
 }
 
-# ── Cycle de vie « démonstration » (portfolio) ──────────────
-variable "demo_mode" {
-  description = "true = tout peut être détruit proprement (pas de snapshot final, ECR vidé, pas de protection). false = production : protections activées."
+# --------------------------------- ALB ---------------------------------------
+variable "acm_certificate_arn" {
+  description = "ARN du certificat ACM pour le listener HTTPS (obligatoire : pas de HTTP en clair)."
+  type        = string
+}
+
+variable "alb_ingress_cidrs" {
+  description = "CIDR autorisés à joindre l'ALB (HTTPS)."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "waf_rate_limit" {
+  description = "Requêtes / 5 min / IP avant blocage par le WAF."
+  type        = number
+  default     = 2000
+}
+
+# ------------------------------ EC2 (ops host) --------------------------------
+variable "enable_ops_host" {
+  description = "Crée un hôte d'administration SSM-only (pas de SSH, pas d'IP publique)."
   type        = bool
-  default     = true
+  default     = false
 }
 
-# ── HTTPS / URL ─────────────────────────────────────────────
-variable "certificate_arn" {
-  description = "ARN d'un certificat ACM (même région). Vide = HTTP uniquement."
-  type        = string
-  default     = ""
+variable "ops_instance_type" {
+  type    = string
+  default = "t3.micro"
 }
 
-variable "app_url" {
-  description = "URL publique (ex. https://taskflow.example.com). Vide = DNS de l'ALB en HTTP."
+# ------------------------------- GitHub OIDC ----------------------------------
+variable "github_repository" {
+  description = "Dépôt GitHub autorisé via OIDC, format org/repo."
   type        = string
-  default     = ""
-}
 
-# ── GitHub OIDC ─────────────────────────────────────────────
-variable "github_owner" {
-  description = "Propriétaire GitHub (utilisateur ou organisation)."
-  type        = string
-  default     = "Mficius"
-}
-
-variable "github_repo" {
-  description = "Nom du dépôt GitHub."
-  type        = string
-  default     = "taskflow"
-}
-
-variable "github_branch" {
-  description = "Seule branche autorisée à pousser des images."
-  type        = string
-  default     = "main"
-}
-
-variable "github_environment" {
-  description = "Environnement GitHub (avec approbation) autorisé à déployer."
-  type        = string
-  default     = "production"
-}
-
-variable "github_infra_environment" {
-  description = "Environnement GitHub (avec approbation) autorisé à exécuter terraform apply."
-  type        = string
-  default     = "infra-production"
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))
+    error_message = "github_repository doit être au format org/repo."
+  }
 }
 
 variable "create_github_oidc_provider" {
-  description = "false si le provider OIDC GitHub existe déjà dans le compte (un seul par URL)."
+  description = "false si le fournisseur OIDC GitHub existe déjà dans le compte (1 seul autorisé)."
   type        = bool
   default     = true
 }
 
-variable "tf_state_bucket" {
-  description = "Bucket S3 de l'état Terraform (créé par scripts/bootstrap-tfstate.sh). Active les rôles OIDC du pipeline infra."
+variable "github_infra_environment" {
+  description = "Environment GitHub (avec reviewers obligatoires) autorisé à lancer terraform apply."
+  type        = string
+  default     = "production-infra"
+}
+
+variable "eks_admin_principal_arns" {
+  description = "ARN IAM (rôles SSO / admins) qui reçoivent AmazonEKSClusterAdminPolicy."
+  type        = list(string)
+  default     = []
+}
+
+variable "tfstate_bucket_arn" {
+  description = "ARN du bucket S3 du state (pour le rôle terraform plan en lecture)."
   type        = string
   default     = ""
 }
 
-variable "enable_account_guardrails" {
-  description = "Garde-fous au niveau du compte/région : Block Public Access S3 et chiffrement EBS par défaut. false si le compte est partagé."
-  type        = bool
-  default     = true
-}
-
-# ── Application / alertes ───────────────────────────────────
-variable "admin_email" {
-  description = "E-mail du compte administrateur TaskFlow créé au premier déploiement."
-  type        = string
-  default     = "admin@taskflow.local"
-}
-
-variable "alert_email" {
-  description = "Adresse recevant les alarmes CloudWatch (vide = aucune notification)."
+variable "tfstate_lock_table_arn" {
+  description = "ARN de la table DynamoDB de lock."
   type        = string
   default     = ""
 }
 
-variable "ecr_keep_images" {
-  description = "Nombre d'images conservées par dépôt ECR."
-  type        = number
-  default     = 20
+variable "tfstate_kms_key_arn" {
+  description = "ARN de la clé KMS dédiée au chiffrement du state Terraform distant."
+  type        = string
+  default     = ""
 }

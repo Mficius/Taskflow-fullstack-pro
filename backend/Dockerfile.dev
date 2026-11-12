@@ -1,18 +1,79 @@
-# TaskFlow API — image de DÉVELOPPEMENT (Apache + code monté en volume)
 FROM php:8.4-apache
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      libzip-dev libonig-dev unzip git \
- && docker-php-ext-install pdo_mysql zip bcmath \
- && a2enmod rewrite \
- && rm -rf /var/lib/apt/lists/*
-
-COPY apache-vhost.conf /etc/apache2/sites-available/000-default.conf
-COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
-COPY docker/entrypoint.dev.sh /usr/local/bin/entrypoint.dev.sh
-RUN chmod +x /usr/local/bin/entrypoint.dev.sh
-
 WORKDIR /var/www/html
-# Le code est monté par docker-compose ; les dépendances (dev incluses) sont installées au premier démarrage.
-RUN chown -R www-data:www-data /var/www/html
-ENTRYPOINT ["entrypoint.dev.sh"]
+
+# 1. Installation des dépendances système et extensions PHP
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpng-dev \
+    libzip-dev \
+    libonig-dev \
+    libjpeg-dev \
+    libxml2-dev \
+    libfreetype6-dev \
+    zip \
+    unzip \
+    git \
+    && docker-php-ext-install \
+        pdo \
+        pdo_mysql \
+        mysqli \
+        zip \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Activation du module de réécriture Apache
+RUN a2enmod rewrite
+
+# 3. Configuration du VirtualHost Apache pour Laravel
+COPY apache-vhost.conf /etc/apache2/sites-available/000-default.conf
+
+# 4. Installation de Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# 5. Copie des fichiers de l'application Laravel
+COPY app/ ./app
+COPY bootstrap/ ./bootstrap
+COPY config/ ./config
+COPY public/ ./public
+COPY resources/ ./resources
+COPY routes/ ./routes
+COPY database/ ./database
+
+# Copie des fichiers de dépendances Composer
+COPY composer.json composer.lock ./
+
+# Copie du point d'entrée Laravel et du modèle d'environnement
+COPY artisan ./
+COPY .env.example ./
+
+# 6. Installation des dépendances PHP
+RUN composer install \
+    --no-interaction \
+    --optimize-autoloader \
+    --no-dev \
+    --prefer-dist
+
+# 7. Création des répertoires nécessaires à Laravel
+RUN mkdir -p \
+    /var/www/html/storage/app \
+    /var/www/html/storage/framework/cache/data \
+    /var/www/html/storage/framework/sessions \
+    /var/www/html/storage/framework/views \
+    /var/www/html/storage/logs \
+    /var/www/html/bootstrap/cache
+
+# 8. Configuration des permissions
+RUN chown -R www-data:www-data \
+        /var/www/html/storage \
+        /var/www/html/bootstrap/cache \
+    && chmod -R 775 \
+        /var/www/html/storage \
+        /var/www/html/bootstrap/cache
+
+# 9. Copie du script de démarrage
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+# 10. Autorisation d'exécution du script
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# 11. Définition du script de démarrage
+ENTRYPOINT ["docker-entrypoint.sh"]

@@ -1,59 +1,76 @@
-# TaskFlow
+# TaskFlow Pro - Full Stack, DevSecOps & Cloud
 
-Application de gestion de tâches (Kanban, projets, notifications, analytics, audit) — **React 18 + MUI**, **Laravel 12 + Sanctum**, **MySQL 8** — livrée avec une chaîne **DevSecOps complète sur AWS ECS Fargate** (Terraform, GitHub Actions + **OIDC**, scans de sécurité, contrôles préventifs, DAST).
+Application de gestion de tâches (React 18 + MUI · Laravel 12 + Sanctum · MySQL) livrée avec une
+chaîne **DevSecOps structurée** : infrastructure AWS en Terraform, déploiement Kubernetes (Helm),
+workflows Terraform authentifiés par **OIDC** (zéro clé AWS longue durée stockée), scans **Gitleaks + Trivy + Semgrep + Checkov + Conftest**,
+**Preventive Controls** (OPA, Kyverno, Pod Security) et **DAST** (OWASP ZAP + tests d'autorisation).
 
+```text
+TaskFlow/
+├── backend/                  Laravel 12 API, Sanctum, tests, Dockerfile production
+├── frontend/                 React 18 / MUI / Vite, tests, Nginx non-root
+├── infrastructure/terraform/ VPC, EKS, RDS, ALB/WAF, IAM/IRSA, S3/STS endpoints
+├── helm/taskflow/             Chart applicatif (API, frontend, worker, migrations)
+├── gitops/                    AppProject + Application Argo CD
+├── kubernetes/                Namespace et politiques Kyverno/quota; anciens manifests dans legacy/
+├── .github/workflows/         CI, Terraform manuel, DAST baseline
+├── policy/                    Règles OPA/Conftest et tests
+├── security/                  Plans OWASP ZAP et contrôles d'autorisation API
+├── scripts/                   Bootstrap EKS, vérification préventive, DAST local
+├── monitoring/                Configurations Prometheus / Blackbox
+├── docs/                      Architecture, runbooks, sécurité, étude de cas
+└── docker-compose*.yml        Développement, DAST local et monitoring
 ```
-taskflow/
-├── backend/                   API Laravel (Dockerfile prod + dev)
-├── frontend/                  SPA React/Vite (Dockerfile prod + dev)
-├── nginx/                     passerelle nginx (image prod, template) + conf dev
-├── infrastructure/
-│   ├── terraform/             VPC · sécurité/IAM/OIDC · ECR · ECS Fargate · RDS · ALB · CloudWatch + tests
-│   ├── policy/                contrôles préventifs OPA/Rego + tests
-│   └── localstack/            AWS simulé pour tester le Terraform
-├── .github/workflows/         ci · cd · infra · infra-test · dast
-├── monitoring/                Prometheus/Grafana (local) — prod : CloudWatch via Terraform
-├── scripts/                   ecs-deploy.sh · push-images.sh · demo-deploy.sh · policy-check.sh
-├── docs/                      architecture · runbook · case-study · screenshots · openapi
-├── legacy/ec2/                v1 « instance unique » conservée (base fonctionnelle)
-├── docker-compose.yml         développement (+ profil monitoring)
-└── docker-compose.ci.yml      pile éphémère pour le DAST
-```
 
-## Démarrage local
+## Démarrage rapide
 
+**Développement (Docker)**
 ```bash
-make init      # crée .env avec des secrets aléatoires
-make up        # http://localhost:8080
+cp .env.example .env && cp backend/.env.example backend/.env   # changer les mots de passe locaux
+docker compose up --build            # http://localhost:8080 (APP_KEY générée au démarrage local)
+# comptes de démo (non production) : voir backend/database/seeders/DatabaseSeeder.php
 ```
 
-Comptes de démo (hors production uniquement) : `admin@taskflow.local / admin123`, `manager@taskflow.local / manager123`, `member@taskflow.local / member123`.
-Monitoring local : `docker compose --profile monitoring up -d` → Grafana http://localhost:3001. phpMyAdmin : `--profile tools`.
-Tests : `make test-backend` · `make test-frontend` · `make test-infra`.
-
-## Déploiement sur AWS
-
+**Cluster local (kind / minikube)**
 ```bash
-make demo-up      # démonstration : infra + images + migrations + service (≈ 15 min, ~3 $/jour)
-make demo-down    # détruit tout
+docker build -t taskflow/laravel-api:local ./backend
+docker build -t taskflow/react-frontend:local ./frontend
+helm install taskflow helm/taskflow -n taskflow --create-namespace -f helm/taskflow/values-local.yaml \
+  --set secrets.local.appKey="base64:$(openssl rand -base64 32)" --set secrets.local.dbPassword="$(openssl rand -hex 12)"
 ```
 
-Production : bootstrap de l'état, `terraform apply`, variables GitHub, puis pipelines — voir [`docs/runbook.md`](docs/runbook.md). **Avant de publier le projet : suivre [`docs/deployment-checklist.md`](docs/deployment-checklist.md).**
+**AWS (EKS)** - voir [docs/architecture/deployment-runbook.md](docs/architecture/deployment-runbook.md).
 
-## Sécurité (résumé)
+**DAST complet en local** : `./scripts/dast-local.sh` (Docker requis).
 
-- **OIDC GitHub → AWS** : aucune clé d'accès stockée ; rôles aux droits minimaux, liés à la branche `main` et aux environnements protégés.
-- Gitleaks, SonarQube, CodeQL, Snyk, Trivy (code, IaC, images), Hadolint, `composer audit`, `npm audit`.
-- **IaC scannée avant création** (Trivy + Checkov + Snyk IaC), **contrôles préventifs OPA** sur le plan Terraform, `terraform test` et LocalStack.
-- **DAST OWASP ZAP** : scan actif authentifié sur une pile éphémère, baseline passif sur la production.
-- Conteneurs non-root, tags ECR immuables, base RDS chiffrée en sous-réseaux isolés, secrets dans SSM, pas de SSH.
+## Workflows GitHub Actions
 
-Chaîne complète : [`docs/architecture/devsecops-pipeline.md`](docs/architecture/devsecops-pipeline.md) · OIDC : [`docs/architecture/security-oidc.md`](docs/architecture/security-oidc.md) · Architecture : [`docs/architecture/architecture.md`](docs/architecture/architecture.md) · Étude de cas : [`docs/case-study/case-study.md`](docs/case-study/case-study.md).
+| Workflow | Déclenchement | Responsabilité |
+|---|---|---|
+| `ci.yml` | Pull Request, push sur `main` ou lancement manuel sur `main` | Tests Laravel/React, Gitleaks, Trivy, Semgrep, Checkov, validation Terraform, Helm lint/render et Conftest. Après succès de tous les jobs sur `main`, build des images, scan Trivy, SBOM CycloneDX et PR de mise à jour GitOps. Les images sont publiées sur Docker Hub uniquement après réussite des scans Trivy. |
+| `terraform.yml` | Lancement manuel | Plan ou apply Terraform via OIDC; Conftest évalue le plan avant toute application. `terraform-plan` et `production-infra` sont des Environments distincts. |
+| `dast.yml` | Hebdomadaire ou manuel | ZAP baseline passif sur `APP_URL`; les tests DAST actifs/authentifiés restent exécutés sur la stack locale éphémère. |
 
-## Fonctionnalités applicatives
+La PR GitOps doit être créée avec le secret `GH_APP_TOKEN` (GitHub App ou PAT limité au dépôt) afin que les checks CI se déclenchent sur cette PR. Ajouter aussi `DOCKER_USERNAME` et `DOCKER_PASSWORD` pour publier sur Docker Hub. Créer les dépôts `laravel-api` et `react-frontend` dans Docker Hub. Attention : un dépôt public expose le contenu des images (dont le code Laravel); si le code doit rester privé, utiliser des dépôts privés et configurer `imagePullSecrets` dans Helm.
 
-Authentification Sanctum · tâches + filtres · projets et membres · dashboard · analytics 7/30/90 jours · recherche globale · notifications persistantes · inbox · vues enregistrées · journal d'activité/audit · commentaires · RBAC côté backend (le frontend n'est pas une frontière de sécurité).
+## Sécurité : où lire quoi
+- [Architecture et flux](docs/architecture/architecture.md)
+- [Modèle de sécurité (OIDC, Preventive Controls, matrice de contrôles)](docs/architecture/security.md)
+- [DAST (ZAP + tests d'autorisation)](docs/architecture/dast.md)
+- [Étude de cas](docs/case-study/case-study.md)
 
-## Prérequis de CI
+## Ce qui a changé par rapport à la version d'origine
+Voir la section « Correctifs et durcissements » de l'[étude de cas](docs/case-study/case-study.md#correctifs-et-durcissements-apportés-au-projet-existant).
 
-Variables GitHub : sorties de `terraform output github_actions_variables` (`AWS_REGION`, `AWS_ECR_ROLE_ARN`, `AWS_DEPLOY_ROLE_ARN`, `APP_URL`, `ECS_*`) et, pour le pipeline infra, `terraform output github_infra_pipeline_variables`. Secrets optionnels : `SONAR_TOKEN` (+ variable `SONAR_HOST_URL`), `SNYK_TOKEN`, `LOCALSTACK_AUTH_TOKEN`.
+
+## Production GitOps (AWS EKS)
+
+- `infrastructure/terraform/` : VPC, EKS, ALB/WAF, RDS, Secrets Manager, S3 et rôles IAM/IRSA.
+- `helm/taskflow/` : source de vérité pour les workloads applicatifs.
+- `gitops/applications/` : Application Argo CD et projet dédié.
+- `kubernetes/policies/` : politiques de plateforme (Kyverno, quotas, NetworkPolicy si non gérées par Helm).
+- `.github/workflows/` : CI + sécurité + build/push Docker Hub + GitOps (après succès des tests) et workflow Terraform séparé.
+
+**Production :** GitHub Actions ne déploie jamais avec `kubectl` ou `helm` dans EKS. Le workflow construit et scanne les images, produit les SBOM, publie les images Docker Hub et enregistre leurs digests puis ouvre une PR qui met à jour les références immuables dans `helm/taskflow/values-eks.yaml`. Argo CD synchronise uniquement après merge.
+
+Avant le premier déploiement, remplacer les valeurs `REPLACE_*` de `values-eks.yaml` par les outputs Terraform, créer les comptes MySQL applicatif/migrator selon `docs/operations/database-user-bootstrap.md`, publier puis merger la PR GitOps des images, et enfin exécuter `scripts/bootstrap-cluster.sh`.

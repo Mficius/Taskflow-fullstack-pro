@@ -1,0 +1,55 @@
+{{- if .Values.migrate.enabled }}
+{{- $fn := include "taskflow.fullname" . }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $fn }}-migrate
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "taskflow.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ $fn }}-migrate
+  annotations:
+    # Avant chaque upgrade (schéma migré avant le nouveau code) ; après le 1er install.
+    "helm.sh/hook": pre-upgrade,post-install
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "taskflow.labels" . | nindent 8 }}
+        app.kubernetes.io/name: {{ $fn }}-migrate
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ $fn }}-migrate
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        runAsUser: 82
+        runAsGroup: 82
+        fsGroup: 82
+      containers:
+        - name: migrate
+          image: {{ include "taskflow.image" (dict "root" . "repo" .Values.api.image.repository "digest" .Values.api.image.digest) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Pas de --seed : aucun compte de démonstration en production
+          args: ["php", "artisan", "migrate", "--force"]
+          envFrom:
+            {{- include "taskflow.migrateEnvFrom" . | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 300m, memory: 256Mi}
+          volumeMounts:
+            {{- include "taskflow.laravelMounts" . | nindent 12 }}
+      volumes:
+        {{- include "taskflow.laravelVolumes" . | nindent 8 }}
+{{- end }}

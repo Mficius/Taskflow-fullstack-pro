@@ -1,15 +1,22 @@
-aws_region = "eu-west-3"
+# cp terraform.tfvars.example terraform.tfvars   (ne JAMAIS committer terraform.tfvars)
+aws_region  = "eu-west-3"
+environment = "prod"
 
-github_owner = "Mficius"
-github_repo  = "taskflow"
+# Dépôt GitHub autorisé à s'authentifier via OIDC (org/repo)
+github_repository = "Mficius/Taskflow-fullstack-pro"
 
-# true  = démonstration/portfolio : tout se détruit proprement (make demo-down)
-# false = production : protection contre la suppression, snapshot final RDS, ECR conservé
-demo_mode = true
+# Plages IP autorisées à joindre l'API EKS publique (jamais 0.0.0.0/0)
+eks_public_access_cidrs = ["203.0.113.10/32"]
 
-# certificate_arn = "arn:aws:acm:eu-west-3:123456789012:certificate/xxxx"
-# app_url         = "https://taskflow.example.com"
-# alert_email     = "ops@example.com"
-# admin_email     = "admin@example.com"
-# db_multi_az     = true
-# create_github_oidc_provider = false   # si le provider existe déjà dans le compte
+# Certificat ACM (région du ALB) pour HTTPS
+acm_certificate_arn = "arn:aws:acm:eu-west-3:123456789012:certificate/xxxxxxxx"
+
+# Sous-réseaux / HA
+single_nat_gateway = false
+db_multi_az        = true
+
+# ARN de la clé KMS dédiée au state Terraform (pas la clé applicative).
+tfstate_kms_key_arn = "arn:aws:kms:eu-west-3:123456789012:key/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+tfstate_bucket_arn     = "arn:aws:s3:::taskflow-tfstate-123456789012"
+tfstate_lock_table_arn = "arn:aws:dynamodb:eu-west-3:123456789012:table/taskflow-tflock"

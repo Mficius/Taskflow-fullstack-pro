@@ -1,0 +1,71 @@
+{{- if .Values.worker.enabled }}
+{{- $fn := include "taskflow.fullname" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fn }}-queue-worker
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    reloader.stakater.com/auto: "true"
+  labels:
+    {{- include "taskflow.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ $fn }}-queue-worker
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $fn }}-queue-worker
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ toYaml .Values.api.config | sha256sum }}
+      labels:
+        {{- include "taskflow.labels" . | nindent 8 }}
+        app.kubernetes.io/name: {{ $fn }}-queue-worker
+        app.kubernetes.io/component: worker
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ $fn }}-api
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        runAsUser: 82
+        runAsGroup: 82
+        fsGroup: 82
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ $fn }}-queue-worker
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      containers:
+        - name: worker
+          image: {{ include "taskflow.image" (dict "root" . "repo" .Values.api.image.repository "digest" .Values.api.image.digest) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["php", "artisan", "queue:work", "--tries=3", "--max-time=3600", "--sleep=3"]
+          envFrom:
+            {{- include "taskflow.apiEnvFrom" . | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          readinessProbe:
+            exec: {command: ["sh", "-c", "kill -0 1"]}
+            periodSeconds: 20
+          livenessProbe:
+            exec: {command: ["sh", "-c", "kill -0 1"]}
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          volumeMounts:
+            {{- include "taskflow.laravelMounts" . | nindent 12 }}
+      volumes:
+        {{- include "taskflow.laravelVolumes" . | nindent 8 }}
+{{- end }}

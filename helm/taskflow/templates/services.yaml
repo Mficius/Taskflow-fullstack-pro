@@ -1,0 +1,19 @@
+{{- $fn := include "taskflow.fullname" . }}
+{{- range $n := list "api" "frontend" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fn }}-{{ $n }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "taskflow.labels" $ | nindent 4 }}
+    app.kubernetes.io/name: {{ $fn }}-{{ $n }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ $fn }}-{{ $n }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+  ports:
+    - {name: http, port: 80, targetPort: http}
+---
+{{- end }}

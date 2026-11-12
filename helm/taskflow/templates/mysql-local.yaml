@@ -1,0 +1,79 @@
+{{- if .Values.mysql.enabled }}
+{{- /* DEV LOCAL uniquement : en production la base est RDS (infrastructure/terraform/rds.tf) */ -}}
+{{- $fn := include "taskflow.fullname" . }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fn }}-mysql
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "taskflow.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ $fn }}-mysql
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: {{ $fn }}-mysql
+  ports:
+    - {name: mysql, port: 3306}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fn }}-mysql
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "taskflow.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ $fn }}-mysql
+spec:
+  serviceName: {{ $fn }}-mysql
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $fn }}-mysql
+  template:
+    metadata:
+      labels:
+        {{- include "taskflow.labels" . | nindent 8 }}
+        app.kubernetes.io/name: {{ $fn }}-mysql
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: mysql
+          image: {{ .Values.mysql.image }}
+          ports:
+            - {name: mysql, containerPort: 3306}
+          env:
+            - {name: MYSQL_DATABASE, value: {{ .Values.mysql.database | quote }}}
+            - {name: MYSQL_USER, valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: DB_USERNAME}}}
+            - {name: MYSQL_PASSWORD, valueFrom: {secretKeyRef: {name: {{ .Values.secrets.name }}, key: DB_PASSWORD}}}
+            - {name: MYSQL_RANDOM_ROOT_PASSWORD, value: "yes"}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "mysqladmin ping -h 127.0.0.1 --silent"]
+            periodSeconds: 10
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/mysql}
+            - {name: tmp, mountPath: /tmp}
+            - {name: run, mountPath: /var/run/mysqld}
+      volumes:
+        - {name: tmp, emptyDir: {sizeLimit: 64Mi}}
+        - {name: run, emptyDir: {sizeLimit: 8Mi}}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: {{ .Values.mysql.storage }}
+{{- end }}

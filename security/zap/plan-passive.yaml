@@ -1,0 +1,28 @@
+# Variante PASSIVE (aucune attaque) : sûre pour staging/production après chaque déploiement.
+env:
+  contexts:
+    - name: taskflow
+      urls: ["${TARGET_URL}"]
+      includePaths: ["${TARGET_URL}/.*"]
+  parameters:
+    failOnError: true
+    progressToStdout: true
+jobs:
+  - type: passiveScan-config
+    parameters: {scanOnlyInScope: true}
+  - type: spider
+    parameters: {context: taskflow, maxDuration: 2}
+  - type: passiveScan-wait
+    parameters: {maxDuration: 3}
+  - type: report
+    parameters:
+      template: traditional-json
+      reportDir: /zap/wrk/reports
+      reportFile: zap-passive
+    risks: [high, medium, low, info]
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: /zap/wrk/reports
+      reportFile: zap-passive
+    risks: [high, medium, low, info]

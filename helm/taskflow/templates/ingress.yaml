@@ -1,0 +1,23 @@
+{{- if .Values.ingress.enabled }}
+{{- $fn := include "taskflow.fullname" . }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fn }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "taskflow.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - {path: /api, pathType: Prefix, backend: {service: {name: {{ $fn }}-api, port: {name: http}}}}
+          - {path: /up, pathType: Exact, backend: {service: {name: {{ $fn }}-api, port: {name: http}}}}
+          - {path: /, pathType: Prefix, backend: {service: {name: {{ $fn }}-frontend, port: {name: http}}}}
+{{- end }}

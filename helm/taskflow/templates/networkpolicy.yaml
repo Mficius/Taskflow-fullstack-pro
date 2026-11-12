@@ -1,0 +1,75 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $fn := include "taskflow.fullname" . }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fn }}-default-deny
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "taskflow.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fn }}-allow-dns
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "taskflow.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fn }}-allow-alb-to-web
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "taskflow.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [{{ $fn }}-api, {{ $fn }}-frontend]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock: {cidr: {{ .Values.networkPolicy.albCidr }}}
+      ports:
+        - {protocol: TCP, port: 8080}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fn }}-allow-api-to-database
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "taskflow.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [{{ $fn }}-api, {{ $fn }}-queue-worker, {{ $fn }}-migrate]}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: {cidr: {{ .Values.networkPolicy.dbCidr }}}
+      ports:
+        - {protocol: TCP, port: 3306}
+    - to:
+        - ipBlock: {cidr: {{ .Values.networkPolicy.awsServicesCidr }}}
+      ports:
+        - {protocol: TCP, port: 443}
+{{- end }}

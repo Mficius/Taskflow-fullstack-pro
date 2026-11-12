@@ -1,0 +1,15 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: taskflow-api, namespace: taskflow}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: taskflow-api}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: taskflow-frontend, namespace: taskflow}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: taskflow-frontend}

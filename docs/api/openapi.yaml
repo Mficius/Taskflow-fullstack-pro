@@ -1,0 +1,235 @@
+openapi: 3.0.3
+info:
+  title: TaskFlow API
+  version: 1.0.0
+  description: >
+    API REST TaskFlow (Laravel 12 + Sanctum). Ce contrat sert d'entrée au scan DAST
+    (OWASP ZAP) : il permet de couvrir 100 % des routes, pas seulement celles
+    découvertes par le crawler.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+tags:
+  - {name: auth}
+  - {name: todos}
+  - {name: projects}
+  - {name: users}
+  - {name: misc}
+paths:
+  /up:
+    get:
+      tags: [misc]
+      security: []
+      summary: Health check
+      responses: {"200": {description: OK}}
+  /api/auth/login:
+    post:
+      tags: [auth]
+      security: []
+      summary: Authentification (limitée à 10 essais/min par email+IP)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Login'}
+      responses:
+        "200": {description: Jeton Bearer}
+        "422": {description: Identifiants invalides}
+        "429": {description: Trop de tentatives}
+  /api/auth/me:
+    get:
+      tags: [auth]
+      summary: Utilisateur courant
+      responses: {"200": {description: OK}, "401": {description: Non authentifié}}
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      summary: Révoque le jeton courant
+      responses: {"200": {description: OK}}
+  /api/auth/profile:
+    put:
+      tags: [auth]
+      summary: Mise à jour du profil
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email]
+              properties:
+                name: {type: string, maxLength: 120}
+                email: {type: string, format: email}
+      responses: {"200": {description: OK}, "422": {description: Validation}}
+  /api/auth/password:
+    put:
+      tags: [auth]
+      summary: Changement de mot de passe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                current_password: {type: string}
+                password: {type: string, minLength: 8}
+                password_confirmation: {type: string}
+      responses: {"200": {description: OK}, "422": {description: Validation}}
+  /api/todos:
+    get:
+      tags: [todos]
+      summary: Liste des tâches (filtres)
+      parameters:
+        - {name: search, in: query, schema: {type: string}}
+        - {name: status, in: query, schema: {type: string}}
+        - {name: priority, in: query, schema: {type: string}}
+        - {name: project_id, in: query, schema: {type: integer}}
+      responses: {"200": {description: OK}}
+    post:
+      tags: [todos]
+      summary: Créer une tâche
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Todo'}
+      responses: {"201": {description: Créée}, "422": {description: Validation}}
+  /api/todos/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+    get:
+      tags: [todos]
+      responses: {"200": {description: OK}, "403": {description: Interdit}, "404": {description: Introuvable}}
+    put:
+      tags: [todos]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Todo'}
+      responses: {"200": {description: OK}, "403": {description: Interdit}, "404": {description: Introuvable}}
+    delete:
+      tags: [todos]
+      responses: {"200": {description: OK}, "204": {description: OK}, "403": {description: Interdit}}
+  /api/todos/{id}/comments:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+    get:
+      tags: [todos]
+      responses: {"200": {description: OK}}
+    post:
+      tags: [todos]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                body: {type: string, maxLength: 2000}
+      responses: {"201": {description: Créé}, "422": {description: Validation}}
+  /api/dashboard:
+    get:
+      tags: [misc]
+      responses: {"200": {description: OK}}
+  /api/analytics:
+    get:
+      tags: [misc]
+      parameters:
+        - {name: range, in: query, schema: {type: integer, enum: [7, 30, 90]}}
+      responses: {"200": {description: OK}}
+  /api/search:
+    get:
+      tags: [misc]
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string}}
+      responses: {"200": {description: OK}}
+  /api/notifications:
+    get:
+      tags: [misc]
+      responses: {"200": {description: OK}}
+  /api/notifications/unread-count:
+    get:
+      tags: [misc]
+      responses: {"200": {description: OK}}
+  /api/notifications/read-all:
+    post:
+      tags: [misc]
+      responses: {"200": {description: OK}}
+  /api/saved-views:
+    get:
+      tags: [misc]
+      responses: {"200": {description: OK}}
+  /api/activity:
+    get:
+      tags: [misc]
+      responses: {"200": {description: OK}}
+  /api/audit-log:
+    get:
+      tags: [misc]
+      responses: {"200": {description: OK}, "403": {description: Interdit}}
+  /api/projects:
+    get:
+      tags: [projects]
+      responses: {"200": {description: OK}}
+    post:
+      tags: [projects]
+      summary: Rôle admin ou manager
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string}
+                description: {type: string}
+      responses: {"201": {description: Créé}, "403": {description: Interdit}}
+  /api/projects/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+    get:
+      tags: [projects]
+      responses: {"200": {description: OK}, "403": {description: Interdit}, "404": {description: Introuvable}}
+  /api/users:
+    get:
+      tags: [users]
+      responses: {"200": {description: OK}}
+    post:
+      tags: [users]
+      summary: Rôle admin uniquement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password, role]
+              properties:
+                name: {type: string}
+                email: {type: string, format: email}
+                password: {type: string, minLength: 8}
+                role: {type: string, enum: [admin, manager, member]}
+      responses: {"201": {description: Créé}, "403": {description: Interdit}}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+  schemas:
+    Login:
+      type: object
+      required: [email, password]
+      properties:
+        email: {type: string, format: email}
+        password: {type: string}
+    Todo:
+      type: object
+      required: [title]
+      properties:
+        title: {type: string, maxLength: 255}
+        description: {type: string}
+        status: {type: string, enum: [todo, in_progress, done]}
+        priority: {type: string, enum: [low, medium, high]}
+        project_id: {type: integer}

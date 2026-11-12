@@ -1,0 +1,7 @@
+# cp backend.hcl.example backend.hcl && terraform init -backend-config=backend.hcl
+bucket         = "taskflow-tfstate-<ACCOUNT_ID>"
+key            = "taskflow/prod/terraform.tfstate"
+region         = "eu-west-3"
+encrypt        = true
+kms_key_id     = "alias/taskflow-tfstate"
+dynamodb_table = "taskflow-tflock"

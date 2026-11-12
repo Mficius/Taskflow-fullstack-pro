@@ -1,0 +1,82 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: taskflow-pod-security
+  annotations:
+    policies.kyverno.io/title: Durcissement des pods TaskFlow
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: no-privileged-no-escalation
+      match:
+        any:
+          - resources: {kinds: [Pod], namespaces: [taskflow]}
+      validate:
+        message: "Conteneur privilégié ou avec escalade de privilèges interdit."
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  allowPrivilegeEscalation: false
+                  =(privileged): false
+    - name: run-as-non-root
+      match:
+        any:
+          - resources: {kinds: [Pod], namespaces: [taskflow]}
+      validate:
+        message: "runAsNonRoot: true est obligatoire."
+        pattern:
+          spec:
+            securityContext:
+              runAsNonRoot: true
+    - name: read-only-root-filesystem
+      match:
+        any:
+          - resources: {kinds: [Pod], namespaces: [taskflow]}
+      validate:
+        message: "readOnlyRootFilesystem: true est obligatoire."
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  readOnlyRootFilesystem: true
+    - name: drop-all-capabilities
+      match:
+        any:
+          - resources: {kinds: [Pod], namespaces: [taskflow]}
+      validate:
+        message: "Les capabilities Linux doivent toutes être retirées (drop: [ALL])."
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  capabilities:
+                    drop: ["ALL"]
+    - name: no-host-namespaces-or-hostpath
+      match:
+        any:
+          - resources: {kinds: [Pod], namespaces: [taskflow]}
+      validate:
+        message: "hostNetwork/hostPID/hostIPC et volumes hostPath sont interdits."
+        deny:
+          conditions:
+            any:
+              - {key: "{{ request.object.spec.hostNetwork || false }}", operator: Equals, value: true}
+              - {key: "{{ request.object.spec.hostPID || false }}", operator: Equals, value: true}
+              - {key: "{{ request.object.spec.hostIPC || false }}", operator: Equals, value: true}
+              - {key: "{{ request.object.spec.volumes[?hostPath] | length(@) }}", operator: GreaterThan, value: 0}
+    - name: require-resources
+      match:
+        any:
+          - resources: {kinds: [Pod], namespaces: [taskflow]}
+      validate:
+        message: "requests et limits CPU/mémoire obligatoires."
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  requests: {cpu: "?*", memory: "?*"}
+                  limits: {memory: "?*"}

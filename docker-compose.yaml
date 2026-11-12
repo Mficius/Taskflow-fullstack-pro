@@ -1,0 +1,86 @@
+# Environnement de DÉVELOPPEMENT local.
+#   cp .env.example .env && cp backend/.env.example backend/.env
+#   docker compose up --build            # app sur http://localhost:8080
+#   docker compose --profile tools up    # + phpMyAdmin sur http://127.0.0.1:8081
+services:
+  laravel-container:
+    container_name: laravel-app
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend:/var/www/html
+      - /var/www/html/vendor
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  frontend-container:
+    container_name: my-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - app-network
+
+  nginx:
+    container_name: nginx-server
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - laravel-container
+      - frontend-container
+    networks:
+      - app-network
+
+  mysql:
+    container_name: mysql-db
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Définir MYSQL_ROOT_PASSWORD dans .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-todo_db}
+      MYSQL_USER: ${MYSQL_USER:-taskflow}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Définir MYSQL_PASSWORD dans .env}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "127.0.0.1:3307:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - app-network
+
+  phpmyadmin:
+    profiles: ["tools"]
+    container_name: phpmyadmin
+    image: phpmyadmin:5
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mysql-db
+      PMA_PORT: 3306
+    ports:
+      - "127.0.0.1:8081:80"
+    depends_on:
+      - mysql
+    networks:
+      - app-network
+
+volumes:
+  mysql-data:
+
+networks:
+  app-network:
+    driver: bridge

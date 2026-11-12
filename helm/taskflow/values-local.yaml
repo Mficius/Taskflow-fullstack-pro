@@ -1,0 +1,40 @@
+# kind / minikube : helm install taskflow ./helm/taskflow -n taskflow -f helm/taskflow/values-local.yaml \
+#   --set secrets.local.appKey="$(php artisan key:generate --show)" --set secrets.local.dbPassword=local-only-pass
+image:
+  registry: ""
+  tag: local
+  pullPolicy: IfNotPresent
+
+api:
+  replicas: 1
+  autoscaling: {enabled: false}
+  config:
+    APP_ENV: staging
+    APP_URL: http://taskflow.localtest.me
+    DB_HOST: mysql          # remplacé automatiquement par <release>-mysql
+    CORS_ALLOWED_ORIGINS: http://taskflow.localtest.me
+    TRUSTED_PROXIES: ""
+    MYSQL_ATTR_SSL_CA: ""   # pas de TLS vers le MySQL local
+
+frontend:
+  replicas: 1
+  autoscaling: {enabled: false}
+
+worker:
+  enabled: false
+
+secrets:
+  local:
+    enabled: true
+
+ingress:
+  enabled: true
+
+networkPolicy:
+  enabled: false
+
+pdb:
+  enabled: false
+
+mysql:
+  enabled: true

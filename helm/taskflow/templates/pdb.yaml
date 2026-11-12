@@ -1,0 +1,33 @@
+{{- if .Values.pdb.enabled }}
+{{- $fn := include "taskflow.fullname" . }}
+{{- range $n := list "api" "frontend" }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $fn }}-{{ $n }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "taskflow.labels" $ | nindent 4 }}
+spec:
+  minAvailable: {{ $.Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $fn }}-{{ $n }}
+---
+{{- end }}
+{{- end }}
+
+{{- if and .Values.pdb.enabled .Values.worker.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "taskflow.fullname" . }}-queue-worker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "taskflow.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "taskflow.fullname" . }}-queue-worker
+{{- end }}

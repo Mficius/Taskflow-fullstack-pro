@@ -1,0 +1,131 @@
+# Valeurs par défaut = profil le plus SÛR. Les surcharges : values-local.yaml / values-eks.yaml.
+nameOverride: ""
+
+image:
+  registry: ""            # ex. docker.io (Docker Hub)
+  tag: ""                 # SHA du commit (immuable). Vide = appVersion
+  pullPolicy: IfNotPresent
+
+# Laisser vide pour des dépôts Docker Hub publics. Pour des dépôts privés :
+# [{name: dockerhub-registry}] avec un Secret kubernetes.io/dockerconfigjson précréé.
+imagePullSecrets: []
+
+api:
+  image:
+    repository: taskflow/laravel-api
+    digest: ""
+  replicas: 2
+  resources:
+    requests: {cpu: 100m, memory: 192Mi}
+    limits: {cpu: 500m, memory: 384Mi}
+  nginx:
+    image: nginxinc/nginx-unprivileged:1.27-alpine
+    resources:
+      requests: {cpu: 25m, memory: 32Mi}
+      limits: {cpu: 200m, memory: 96Mi}
+  autoscaling: {enabled: true, minReplicas: 2, maxReplicas: 6, targetCPUUtilizationPercentage: 70}
+  # Variables d'environnement NON secrètes
+  config:
+    APP_NAME: TaskFlow
+    APP_ENV: production
+    APP_DEBUG: "false"
+    APP_URL: https://taskflow.example.com
+    LOG_CHANNEL: stderr
+    LOG_LEVEL: warning
+    DB_CONNECTION: mysql
+    DB_HOST: change-me.rds.amazonaws.com
+    DB_PORT: 3306
+    DB_DATABASE: taskflow
+    QUEUE_CONNECTION: database
+    CACHE_STORE: database
+    SESSION_DRIVER: database
+    CORS_ALLOWED_ORIGINS: https://taskflow.example.com
+    TRUSTED_PROXIES: 10.20.0.0/16
+    SANCTUM_EXPIRATION_MINUTES: 480
+    FILESYSTEM_DISK: local
+    AWS_DEFAULT_REGION: eu-west-3
+    AWS_REGION: eu-west-3
+    AWS_STS_REGIONAL_ENDPOINTS: regional
+
+frontend:
+  image:
+    repository: taskflow/react-frontend
+    digest: ""
+  replicas: 2
+  resources:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits: {cpu: 200m, memory: 96Mi}
+  autoscaling: {enabled: true, minReplicas: 2, maxReplicas: 6, targetCPUUtilizationPercentage: 70}
+
+worker:
+  enabled: true
+  replicas: 1
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: 300m, memory: 256Mi}
+
+migrate:
+  enabled: true
+
+# --- Secrets -----------------------------------------------------------------
+# Production : ExternalSecret (AWS Secrets Manager). Jamais de secret dans values.
+adminBootstrap:
+  enabled: false
+
+secrets:
+  name: taskflow-api-secrets
+  migrateName: taskflow-migration-secrets
+  external:
+    enabled: false
+    region: eu-west-3
+    appSecretName: taskflow/prod/laravel
+    dbAppSecretArn: ""
+    dbMigratorSecretArn: ""
+  # Dev local UNIQUEMENT : crée un Secret depuis ces valeurs
+  local:
+    enabled: false
+    appKey: ""
+    dbUsername: taskflow
+    dbPassword: ""
+
+# --- Exposition -----------------------------------------------------------------
+ingress:                       # cluster local (ingress-nginx)
+  enabled: false
+  className: nginx
+  host: taskflow.localtest.me
+  annotations: {}
+
+targetGroupBinding:            # EKS : ALB géré par Terraform
+  enabled: false
+  frontendArn: ""
+  apiArn: ""
+
+# --- Sécurité / résilience --------------------------------------------------------
+networkPolicy:
+  enabled: true
+  albCidr: 10.20.0.0/16
+  dbCidr: 10.20.128.0/18
+  awsServicesCidr: 10.20.0.0/16
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile: {type: RuntimeDefault}
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: {drop: [ALL]}
+
+# MySQL embarqué : DEV LOCAL UNIQUEMENT (en prod : RDS via Terraform)
+serviceAccount:
+  apiRoleArn: ""
+
+mysql:
+  enabled: false
+  image: mysql:8.4
+  database: taskflow
+  storage: 2Gi

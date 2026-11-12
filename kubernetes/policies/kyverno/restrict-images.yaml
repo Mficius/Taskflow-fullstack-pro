@@ -1,0 +1,32 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: taskflow-image-supply-chain
+  annotations:
+    policies.kyverno.io/title: Origine et tags des images
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: no-latest-tag
+      match:
+        any:
+          - resources: {kinds: [Pod], namespaces: [taskflow]}
+      validate:
+        message: "Le tag ':latest' (ou l'absence de tag) est interdit."
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest & *:*"
+    - name: allowed-registries
+      match:
+        any:
+          - resources: {kinds: [Pod], namespaces: [taskflow]}
+      validate:
+        message: "Images autorisées : ECR du compte (taskflow/*) et nginx-unprivileged. MySQL local ne doit pas être déployé en production."
+        pattern:
+          spec:
+            containers:
+              - image: "*.dkr.ecr.*.amazonaws.com/taskflow/* | nginxinc/nginx-unprivileged:*"

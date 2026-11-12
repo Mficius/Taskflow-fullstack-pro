@@ -1,86 +1,52 @@
-# Étude de cas — Industrialiser TaskFlow : de `docker compose` à ECS Fargate avec une chaîne DevSecOps
-
-> **Statut honnête** : l'architecture, le Terraform et les pipelines ont été conçus et validés statiquement (syntaxe, tests unitaires applicatifs). Les chiffres de la section « Résultats » sont à remplacer par les mesures du premier déploiement réel (voir `docs/deployment-checklist.md`).
+# Étude de cas — Industrialiser et sécuriser TaskFlow
 
 ## Contexte
 
-TaskFlow est une application de gestion de tâches (React 18 + MUI, Laravel 12 + Sanctum, MySQL) qui ne tournait qu'en local.
-Objectif : la rendre **déployable, observable et sécurisée**, avec une chaîne de livraison reproductible et un budget maîtrisé.
+TaskFlow est une application de gestion de tâches construite avec React, Laravel 12, Sanctum et MySQL. L'objectif de cette évolution est de disposer d'une architecture AWS EKS reproductible, d'une chaîne CI sécurisée et d'un déploiement GitOps où GitHub Actions ne possède aucun accès de déploiement Kubernetes.
 
-## Problèmes constatés au départ
+## Évolutions apportées
 
-| Constat | Risque |
+| Domaine | Correction |
 |---|---|
-| `.env` (avec `APP_KEY` et mot de passe root MySQL = `root`) présent dans l'archive du projet | Fuite de secrets |
-| `config:cache` exécuté **au build** de l'image | Les variables d'environnement du serveur sont ignorées en production |
-| Image de production contenant compilateur, git, pcov | Surface d'attaque, image lourde |
-| Seeder avec comptes `admin123` / `manager123` | Compte administrateur trivial en production |
-| phpMyAdmin et MySQL exposés sur l'hôte ; `mysql/data` monté dans le dépôt | Accès direct à la base, données versionnables par erreur |
-| Test frontend écrit pour Jest alors que le projet utilise Vitest | CI impossible |
-| Aucune infra, aucun pipeline, aucune supervision | Déploiement manuel, pas de rollback |
+| Infrastructure | Harmonisation Terraform autour d'EKS, ALB/WAF, RDS privé, KMS, Secrets Manager, S3 et endpoints privés S3/STS |
+| IAM | Suppression du rôle GitHub de déploiement direct et des Access Entries correspondantes; séparation OIDC GitHub→AWS et IRSA des pods |
+| Base de données | Séparation des comptes runtime CRUD et migrator DDL; le compte maître RDS n'est plus synchronisé dans les pods |
+| Helm | Sécurisation des workloads, probes, ressources, HPA/PDB, ExternalSecrets, NetworkPolicies et TargetGroupBindings |
+| GitOps | AppProject et Application Argo CD; Helm devient la source de vérité des workloads |
+| CI | Tests Laravel/React, Gitleaks, Trivy, Semgrep, Checkov, Terraform validate, Helm lint/render et tests Conftest |
+| Supply chain | Scan Trivy avant publication, SBOM CycloneDX en artefact CI, références Docker Hub par digest |
+| Déploiement | PR GitOps après build; Argo CD synchronise après merge; aucun `kubectl apply`/`helm upgrade` de production depuis GitHub Actions |
+| Plateforme | Bootstrap External Secrets, AWS Load Balancer Controller, Kyverno, Reloader, metrics-server et Argo CD |
 
-## Parcours : deux architectures, un choix argumenté
+## Décisions importantes
 
-### v1 — une instance EC2 + Docker Compose (conservée dans `legacy/ec2/`)
+1. **GitOps réel** : le pipeline CI publie les images et modifie les valeurs Helm par PR. Argo CD est le seul acteur qui synchronise l'application vers EKS.
+2. **Identités séparées** : OIDC GitHub→AWS pour les workflows, IRSA pour les pods; aucun rôle GitHub n'est autorisé à modifier directement les ressources Kubernetes.
+3. **Secrets minimisés** : APP_KEY, compte runtime et compte migrator sont stockés dans Secrets Manager. Le secret maître RDS reste réservé à l'administration.
+4. **Contrôles avant déploiement** : tests, scanners, validation Terraform, rendu Helm et Conftest; le plan Terraform est évalué avant apply.
+5. **Images immuables** : tags SHA et digests Docker Hub, scans Trivy et SBOM CycloneDX.
 
-1 EC2, MySQL sur volume EBS chiffré, déploiement par SSM + script avec rollback, Prometheus/Grafana embarqués. **≈ 75 $/mois**, simple à valider.
-Limites : un seul point de défaillance (instance **et** base), système d'exploitation à patcher, base non managée, pas de montée en charge.
+## État de validation de cette livraison
 
-### v2 — ECS Fargate + RDS (version principale)
+Les vérifications exécutées pendant la correction de l'archive :
 
-| Sujet | v1 (EC2) | v2 (Fargate) | Raison du choix |
-|---|---|---|---|
-| Serveur | À patcher, Docker à gérer | **Aucun** | Moins de surface d'attaque et d'exploitation |
-| Base | MySQL en conteneur | **RDS** chiffrée, sous-réseaux isolés, PITR | Sauvegardes et restauration gérées |
-| Déploiement | Script SSM + compose | **ECS** + circuit breaker | Rollback automatique natif |
-| Migrations | Au démarrage du conteneur | **Tâche ponctuelle avant déploiement** | Une migration en échec n'interrompt pas la prod |
-| Supervision | Prometheus/Grafana (stockage à gérer) | **CloudWatch** + Container Insights | Natif, sans serveur ; Prometheus reste en local |
-| Montée en charge | Impossible sans refonte | `DESIRED_COUNT`, Multi-AZ RDS | Prêt pour plusieurs tâches |
-| Coût | ≈ 75 $ | ≈ 75 $ (1 tâche, sans NAT) | Équivalent à taille égale, mais avec base managée |
+- 43 fichiers YAML statiques analysés avec détection des clés dupliquées;
+- 65 fichiers PHP passés avec `php -l`;
+- scripts shell passés avec `bash -n`;
+- `composer.lock` vérifié comme JSON valide;
+- contrôle statique des déclarations Terraform dupliquées et des références retirées des anciens mécanismes de déploiement direct et de l’ancienne cible ECS.
 
-Les **mêmes images ECR** et le même pipeline de sécurité servent aux deux : le passage de l'une à l'autre n'a pas demandé de réécrire l'application.
+**Les validations suivantes n'ont pas pu être exécutées dans l'environnement de correction** : `terraform validate/plan`, `helm lint/template`, `conftest verify/test`, tests PHPUnit, tests Vitest, builds Docker, scans Trivy/Checkov/Semgrep et déploiement AWS. Les workflows CI sont configurés pour les exécuter dans GitHub Actions. Ne pas considérer le projet comme prêt pour la production avant que ces jobs soient verts et que les placeholders aient été remplacés.
 
-## Solution (v2)
+## Limites et points à traiter avant production
 
-1. **Conteneurs de production** : image PHP-FPM Alpine multi-étapes sans outils de build, non-root, healthcheck, caches Laravel générés au démarrage ; frontend nginx *unprivileged* ; **passerelle nginx** (en-têtes de sécurité, rate-limit sur `/api/auth/login`) configurée par template.
-2. **Infrastructure as Code (Terraform)** : VPC 2 AZ, ALB, ECS Fargate (1 tâche = 3 conteneurs), RDS en sous-réseaux isolés, ECR (tags immuables, scan), secrets générés dans SSM et injectés par ECS, alarmes et dashboard CloudWatch.
-3. **CI** : tests (PHPUnit, Vitest) avec couverture, Gitleaks, SonarQube, CodeQL, Snyk, audits Composer/npm, Hadolint, Trivy (dépendances, images).
-4. **Sécurité de l'IaC avant création** : Trivy + Checkov + Snyk IaC, puis **contrôles préventifs OPA/Conftest** sur le plan Terraform (aucun apply si une règle est violée), garde-fous de compte.
-5. **Tester l'infra sans cloud** : `terraform test` avec providers simulés ; apply réel sur **LocalStack** quand le jeton est disponible.
-6. **CD avec OIDC** : aucune clé AWS stockée ; rôles distincts (push ECR depuis `main`, déploiement depuis l'environnement protégé) ; migrations → mise à jour du service → circuit breaker.
-7. **DAST** : scan actif authentifié de l'API par OWASP ZAP sur une pile éphémère (jamais sur la production) ; baseline passif après déploiement.
-8. **Cycle « démonstration »** : `make demo-up` / `make demo-down` créent et détruisent tout (quelques dollars par session) pour un portfolio qui ne coûte rien au repos.
+- Le rôle `tf-apply` conserve `AdministratorAccess` sous une permissions boundary partielle. Cette boundary n'est pas du least privilege complet; garder l'approbation humaine et faire auditer/réduire ce rôle.
+- Le node group EKS reste à capacité fixe; HPA scale les pods, pas les nœuds. Cluster Autoscaler/Karpenter n'est pas encore installé.
+- Le bucket S3 et IRSA sont prêts pour les futures pièces jointes, mais le code actuel n'a pas de fonctionnalité de téléversement. Ajouter `league/flysystem-aws-s3-v3`, mettre à jour `composer.lock` et tester avant de passer `FILESYSTEM_DISK` à `s3`.
+- Les images ne sont pas encore signées par Cosign; la vérification de signature à l'admission n'est donc pas activée.
+- L'OIDC utilisateur (SSO) n'est pas configuré : l'application utilise actuellement Sanctum.
+- Remplacer les valeurs `REPLACE_*`, l'URL, le certificat ACM, les CIDR d'accès EKS et les paramètres du backend Terraform.
 
-## Décisions et compromis
+## Suites possibles
 
-| Décision | Alternative | Raison |
-|---|---|---|
-| Tâches en sous-réseau public + IP publique | Sous-réseaux privés + NAT/endpoints | ≈ −35 $/mois ; entrée impossible hors ALB (security group) ; évolution documentée |
-| 1 tâche, RDS mono-AZ par défaut | 2 tâches + Multi-AZ | Coût de démonstration ; activables (`DESIRED_COUNT`, `db_multi_az`) |
-| CloudWatch en production | Prometheus/Grafana sur Fargate | Pas de stockage persistant ni d'accès réseau dédié à gérer |
-| Utilisateur principal RDS pour l'application | Utilisateur à droits réduits | Simplicité ; amélioration listée |
-| Rôle `apply` Terraform très large | Politique fine par service | Terraform gère IAM/VPC/…; protégé par environnement approuvé + OPA ; à resserrer |
-| LocalStack conditionnel | LocalStack obligatoire | ECS/RDS/ELB sont (à notre connaissance) des services payants ; les tests `mock_provider` couvrent le cas sans compte |
-
-## Résultats (à compléter après le déploiement réel)
-
-| Mesure | Valeur |
-|---|---|
-| Durée CI / CD | _à mesurer_ |
-| Durée d'un déploiement complet (`make demo-up`) | _à mesurer_ |
-| Coût réel d'une session de démonstration | _à mesurer_ |
-| Alertes ZAP (High / Medium) traitées | _à mesurer_ |
-| Vulnérabilités corrigées grâce aux scans | _à mesurer_ |
-| Test de rollback automatique | _capture_ |
-
-## Leçons
-
-- Générer les caches Laravel **au démarrage** et non au build.
-- Des tags d'image immuables rendent le rollback déterministe.
-- Jouer les migrations **avant** de toucher au service évite de casser la production avec un schéma à moitié appliqué.
-- La sécurité de la chaîne de livraison (OIDC, moindres privilèges, politiques préventives, environnement protégé) compte autant que celle de l'application.
-- Un émulateur (LocalStack) détecte des erreurs de configuration, il ne remplace pas un vrai déploiement.
-
-## Prochaines étapes
-
-Sous-réseaux privés + VPC endpoints, HTTPS (ACM) + WAF, 2 tâches + RDS Multi-AZ, Auto Scaling, utilisateur MySQL dédié, signature d'images (cosign), tests de charge.
+Least privilege complet pour `tf-apply`, Kyverno `verifyImages`, scaling de nœuds, stockage S3 effectif des pièces jointes, authentification utilisateur OIDC/SSO, CSP avec nonce et stratégie de sauvegarde/restauration testée.

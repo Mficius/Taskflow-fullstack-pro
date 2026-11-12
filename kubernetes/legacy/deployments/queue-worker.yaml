@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskflow-queue-worker
+  namespace: taskflow
+  labels: &labels
+    app.kubernetes.io/name: taskflow-queue-worker
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: taskflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: taskflow-queue-worker
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      serviceAccountName: taskflow-api
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 82
+        runAsGroup: 82
+        fsGroup: 82
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: worker
+          image: ACCOUNT_ID.dkr.ecr.eu-west-3.amazonaws.com/taskflow/laravel-api:0.0.0-replace-me
+          imagePullPolicy: IfNotPresent
+          args: ["php", "artisan", "queue:work", "--tries=3", "--max-time=3600", "--sleep=3"]
+          envFrom:
+            - configMapRef: {name: taskflow-api-config}
+            - secretRef: {name: taskflow-api-secrets}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 300m, memory: 256Mi}
+          readinessProbe:
+            exec: {command: ["sh", "-c", "pgrep -f 'artisan queue:work' >/dev/null"]}
+            periodSeconds: 20
+          livenessProbe:
+            exec: {command: ["sh", "-c", "pgrep -f 'artisan queue:work' >/dev/null"]}
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: storage, mountPath: /var/www/html/storage}
+            - {name: bootstrap-cache, mountPath: /var/www/html/bootstrap/cache}
+      volumes:
+        - {name: tmp, emptyDir: {sizeLimit: 32Mi}}
+        - {name: storage, emptyDir: {sizeLimit: 128Mi}}
+        - {name: bootstrap-cache, emptyDir: {sizeLimit: 32Mi}}

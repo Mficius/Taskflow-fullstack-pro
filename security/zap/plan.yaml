@@ -1,0 +1,103 @@
+# OWASP ZAP - Automation Framework : scan DAST authentifié de TaskFlow
+#   docker run --rm --network host -v "$PWD":/zap/wrk:rw -e ZAP_AUTH_TOKEN -e TARGET_URL \
+#     ghcr.io/zaproxy/zaproxy:stable zap.sh -cmd -autorun /zap/wrk/security/zap/plan.yaml
+# Variables : TARGET_URL (ex. http://localhost:8080), ZAP_AUTH_TOKEN (jeton Sanctum),
+#             ZAP_ACTIVE (true|false) - scan actif UNIQUEMENT sur environnement jetable/staging.
+env:
+  contexts:
+    - name: taskflow
+      urls: ["${TARGET_URL}"]
+      includePaths: ["${TARGET_URL}/.*"]
+      excludePaths:
+        - "${TARGET_URL}/api/auth/logout"   # ne pas révoquer le jeton pendant le scan
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    progressToStdout: true
+
+jobs:
+  - type: passiveScan-config
+    parameters:
+      scanOnlyInScope: true
+      maxAlertsPerRule: 10
+
+  # Authentification : le jeton Bearer est injecté dans chaque requête
+  - type: replacer
+    rules:
+      - description: Sanctum bearer token
+        matchType: req_header
+        matchString: Authorization
+        replacementString: "Bearer ${ZAP_AUTH_TOKEN}"
+        tokenProcessing: false
+
+  # 1) Couverture API complète depuis le contrat OpenAPI
+  - type: openapi
+    parameters:
+      apiFile: /zap/wrk/docs/api/openapi.yaml
+      targetUrl: "${TARGET_URL}"
+      context: taskflow
+
+  # 2) Découverte du frontend SPA
+  - type: spider
+    parameters:
+      context: taskflow
+      maxDuration: 3
+  - type: spiderAjax
+    parameters:
+      context: taskflow
+      maxDuration: 3
+      browserId: firefox-headless
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 5
+
+  # Faux positifs acceptés et documentés (voir docs/architecture/dast.md)
+  - type: alertFilter
+    alertFilters:
+      - ruleId: 10055          # CSP: style-src 'unsafe-inline' (requis par MUI/Emotion)
+        newRisk: Info
+        context: taskflow
+        url: "${TARGET_URL}/.*"
+        urlIsRegex: true
+        parameter: style-src
+      - ruleId: 10049          # contenu cacheable : assets Vite versionnés (Cache-Control immutable)
+        newRisk: Info
+        context: taskflow
+        url: "${TARGET_URL}/assets/.*"
+        urlIsRegex: true
+
+  # 3) Scan actif (injections, XSS, traversée de chemin, SSRF...) : désactivable
+  - type: activeScan
+    parameters:
+      context: taskflow
+      maxScanDurationInMins: 15
+      maxRuleDurationInMins: 3
+      threadPerHost: 4
+    policyDefinition:
+      defaultStrength: Medium
+      defaultThreshold: Medium
+
+  - type: passiveScan-wait
+
+  - type: report
+    parameters:
+      template: traditional-json
+      reportDir: /zap/wrk/reports
+      reportFile: zap-report
+      reportTitle: TaskFlow DAST
+    risks: [high, medium, low, info]
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: /zap/wrk/reports
+      reportFile: zap-report
+      reportTitle: TaskFlow DAST
+    risks: [high, medium, low, info]
+  - type: report
+    parameters:
+      template: sarif-json
+      reportDir: /zap/wrk/reports
+      reportFile: zap-report
+      reportTitle: TaskFlow DAST
+    risks: [high, medium, low]

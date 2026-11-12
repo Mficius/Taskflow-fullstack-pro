@@ -1,22 +1,30 @@
+# Prometheus autonome (docker-compose.monitoring.yml). Dans EKS, utiliser kube-prometheus-stack
+# avec monitoring/prometheus/prometheusrule.yaml (mêmes règles).
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
 rule_files:
-  - /etc/prometheus/alerts.yml
+  - /etc/prometheus/rules/*.yml
 
 scrape_configs:
   - job_name: prometheus
-    static_configs: [{ targets: ["localhost:9090"] }]
+    static_configs:
+      - targets: ["localhost:9090"]
 
-  - job_name: node
-    static_configs: [{ targets: ["node-exporter:9100"] }]
-
-  - job_name: containers
-    static_configs: [{ targets: ["cadvisor:8080"] }]
-
-  - job_name: mysql
-    static_configs: [{ targets: ["mysqld-exporter:9104"] }]
-
-  - job_name: nginx
-    static_configs: [{ targets: ["nginx-exporter:9113"] }]
+  # Sondes "boîte noire" : disponibilité réelle côté utilisateur
+  - job_name: taskflow-blackbox
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://gateway/up           # API (php-fpm via nginx)
+          - http://gateway/             # frontend
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115

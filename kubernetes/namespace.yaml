@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: taskflow
+  labels:
+    app.kubernetes.io/part-of: taskflow
+    # Pod Security Admission : profil "restricted" appliqué par l'API server (preventive control natif)
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

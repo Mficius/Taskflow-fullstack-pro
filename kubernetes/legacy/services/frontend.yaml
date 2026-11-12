@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskflow-frontend
+  namespace: taskflow
+  labels: {app.kubernetes.io/name: taskflow-frontend, app.kubernetes.io/part-of: taskflow}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: taskflow-frontend
+  ports:
+    - {name: http, port: 80, targetPort: http}

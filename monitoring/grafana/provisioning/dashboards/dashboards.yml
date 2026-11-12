@@ -1,6 +1,6 @@
 apiVersion: 1
 providers:
-  - name: TaskFlow
+  - name: taskflow
     folder: TaskFlow
     type: file
     disableDeletion: true

@@ -1,18 +1,12 @@
-# Captures d'écran
+# Captures d'écran à ajouter (pour le dossier / la soutenance)
 
-Déposez ici les captures utilisées dans le README et l'étude de cas :
+Placer ici les captures **réelles** de votre environnement (je n'ai pas d'accès à votre compte AWS/GitHub) :
 
-| Fichier suggéré | Contenu |
-|---|---|
-| `01-app-dashboard.png` | Tableau de bord TaskFlow (en production) |
-| `02-ci-success.png` | CI verte (Actions) |
-| `03-cd-oidc-deploy.png` | Job de déploiement (OIDC → migrations → ECS) |
-| `04-infra-plan-opa.png` | PR avec plan Terraform + contrôles préventifs OPA |
-| `05-iac-scans.png` | Résultats Trivy / Checkov / Snyk |
-| `06-zap-report.png` | Rapport DAST OWASP ZAP |
-| `07-cloudwatch-dashboard.png` | Dashboard CloudWatch (ECS, ALB, RDS) |
-| `08-ecs-service.png` | Service ECS sain (tâche RUNNING, déploiement COMPLETED) |
-| `09-rollback.png` | Circuit breaker : retour automatique à la révision précédente |
-| `10-ecr-immutable.png` | Dépôts ECR (tags immuables, scan) |
-
-> Vérifiez qu'aucune capture ne montre d'ARN de compte, de jeton ou de mot de passe.
+1. `01-actions-security-green.png` - workflow *Security* vert (IaC, images, DAST)
+2. `02-code-scanning.png` - onglet Security → résultats Trivy / Checkov / ZAP
+3. `03-oidc-role-trust.png` - politique de confiance du rôle IAM (condition `sub`)
+4. `04-terraform-plan-opa.png` - étape « Preventive Controls » d'un plan
+5. `05-kyverno-deny.png` - refus d'un pod privilégié par l'admission
+6. `06-verify-controls.png` - sortie de `verify-preventive-controls.sh`
+7. `07-zap-report.png` - rapport HTML OWASP ZAP
+8. `08-grafana-dashboard.png` - dashboard *TaskFlow - Vue d'ensemble*

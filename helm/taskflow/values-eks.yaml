@@ -1,0 +1,68 @@
+# Production EKS : les images sont mises à jour par PR GitOps (digest immuable).
+# Remplacer les valeurs REPLACE_* avec les outputs Terraform avant le premier bootstrap.
+image:
+  registry: docker.io
+  tag: bootstrap
+  pullPolicy: IfNotPresent
+
+api:
+  image:
+    repository: REPLACE_WITH_DOCKERHUB_USERNAME/laravel-api
+    digest: ""
+  replicas: 2
+  config:
+    APP_ENV: production
+    APP_DEBUG: "false"
+    APP_URL: https://taskflow.example.com
+    CORS_ALLOWED_ORIGINS: https://taskflow.example.com
+    DB_HOST: REPLACE_WITH_RDS_ENDPOINT
+    DB_PORT: "3306"
+    DB_DATABASE: taskflow
+    FILESYSTEM_DISK: local
+    AWS_DEFAULT_REGION: eu-west-3
+    AWS_REGION: eu-west-3
+    AWS_STS_REGIONAL_ENDPOINTS: regional
+    AWS_BUCKET: REPLACE_WITH_APP_FILES_BUCKET
+    MYSQL_ATTR_SSL_CA: /etc/ssl/certs/rds-global-bundle.pem
+
+frontend:
+  image:
+    repository: REPLACE_WITH_DOCKERHUB_USERNAME/react-frontend
+    digest: ""
+  replicas: 2
+
+worker:
+  enabled: true
+  replicas: 2
+
+adminBootstrap:
+  enabled: false
+
+secrets:
+  external:
+    enabled: true
+    region: eu-west-3
+    appSecretName: taskflow/prod/laravel
+    dbAppSecretArn: REPLACE_WITH_RDS_APP_SECRET_ARN
+    dbMigratorSecretArn: REPLACE_WITH_RDS_MIGRATOR_SECRET_ARN
+
+serviceAccount:
+  apiRoleArn: REPLACE_WITH_TASKFLOW_APP_IRSA_ROLE_ARN
+
+targetGroupBinding:
+  enabled: true
+  frontendArn: REPLACE_WITH_FRONTEND_TG_ARN
+  apiArn: REPLACE_WITH_API_TG_ARN
+
+networkPolicy:
+  enabled: true
+  albCidr: 10.20.0.0/16
+  dbCidr: 10.20.128.0/18
+  awsServicesCidr: 10.20.0.0/16
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+mysql:
+  enabled: false

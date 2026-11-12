@@ -1,0 +1,10 @@
+TaskFlow {{ .Chart.AppVersion }} déployé dans le namespace {{ .Release.Namespace }}.
+
+Vérifier :
+  kubectl -n {{ .Release.Namespace }} get pods,hpa,networkpolicy
+{{- if .Values.ingress.enabled }}
+  Application : http://{{ .Values.ingress.host }}
+{{- end }}
+{{- if .Values.targetGroupBinding.enabled }}
+  L'ALB (Terraform) route vers les Services via TargetGroupBinding.
+{{- end }}

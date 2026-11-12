@@ -1,0 +1,99 @@
+# Équivalent CRD de rules/taskflow.yml pour kube-prometheus-stack
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: taskflow
+  namespace: taskflow
+  labels:
+    release: kube-prometheus-stack
+    app.kubernetes.io/part-of: taskflow
+spec:
+  groups:
+  - name: taskflow-availability
+    rules:
+    - alert: TaskflowEndpointDown
+      expr: probe_success{job="taskflow-blackbox"} == 0
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: '{{ $labels.instance }} ne répond plus'
+        description: La sonde HTTP échoue depuis 2 minutes.
+    - alert: TaskflowSlowResponses
+      expr: probe_duration_seconds{job="taskflow-blackbox"} > 1.5
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: Latence élevée sur {{ $labels.instance }}
+        description: Temps de réponse > 1,5 s depuis 5 minutes.
+    - alert: TaskflowTlsCertExpiringSoon
+      expr: probe_ssl_earliest_cert_expiry{job="taskflow-blackbox"} - time() < 14
+        * 86400
+      for: 1h
+      labels:
+        severity: warning
+      annotations:
+        summary: Certificat TLS de {{ $labels.instance }} expire dans moins de 14
+          jours
+  - name: taskflow-kubernetes
+    rules:
+    - alert: TaskflowPodCrashLooping
+      expr: increase(kube_pod_container_status_restarts_total{namespace="taskflow"}[15m])
+        > 3
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: Pod {{ $labels.pod }} redémarre en boucle
+    - alert: TaskflowDeploymentReplicasMismatch
+      expr: kube_deployment_status_replicas_available{namespace="taskflow"} < kube_deployment_spec_replicas{namespace="taskflow"}
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: Deployment {{ $labels.deployment }} incomplet
+    - alert: TaskflowHighMemory
+      expr: "sum by (pod) (container_memory_working_set_bytes{namespace=\"taskflow\"\
+        , container!=\"\"})\n  / sum by (pod) (kube_pod_container_resource_limits{namespace=\"\
+        taskflow\", resource=\"memory\"}) > 0.9\n"
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: Pod {{ $labels.pod }} à plus de 90 % de sa limite mémoire (risque
+          OOMKill)
+    - alert: TaskflowCpuThrottling
+      expr: "sum by (pod) (rate(container_cpu_cfs_throttled_periods_total{namespace=\"\
+        taskflow\"}[5m]))\n  / sum by (pod) (rate(container_cpu_cfs_periods_total{namespace=\"\
+        taskflow\"}[5m])) > 0.5\n"
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: Pod {{ $labels.pod }} fortement limité en CPU
+    - alert: TaskflowHpaMaxedOut
+      expr: kube_horizontalpodautoscaler_status_current_replicas{namespace="taskflow"}
+        == kube_horizontalpodautoscaler_spec_max_replicas{namespace="taskflow"}
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: HPA {{ $labels.horizontalpodautoscaler }} au maximum depuis 15 min
+    - alert: TaskflowMigrationJobFailed
+      expr: kube_job_status_failed{namespace="taskflow"} > 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: Job {{ $labels.job_name }} en échec (migration de base ?)
+  - name: taskflow-security
+    rules:
+    - alert: TaskflowPolicyViolationsSpike
+      expr: sum(increase(kyverno_policy_results_total{rule_result="fail", resource_namespace="taskflow"}[15m]))
+        > 0
+      for: 0m
+      labels:
+        severity: warning
+      annotations:
+        summary: Kyverno a refusé/signalé des ressources non conformes dans taskflow

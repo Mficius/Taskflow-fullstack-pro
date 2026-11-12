@@ -1,0 +1,104 @@
+name: Terraform
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Terraform action
+        type: choice
+        options: [plan, apply]
+        default: plan
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  plan:
+    if: inputs.action == 'plan'
+    runs-on: ubuntu-latest
+    environment: terraform-plan
+    defaults:
+      run:
+        working-directory: infrastructure/terraform
+    env:
+      TF_VAR_github_repository: ${{ github.repository }}
+      TF_VAR_aws_region: ${{ vars.AWS_REGION || 'eu-west-3' }}
+      TF_VAR_single_nat_gateway: ${{ vars.SINGLE_NAT_GATEWAY || 'false' }}
+      TF_VAR_db_multi_az: ${{ vars.DB_MULTI_AZ || 'true' }}
+      TF_VAR_acm_certificate_arn: ${{ vars.ACM_CERTIFICATE_ARN }}
+      TF_VAR_eks_public_access_cidrs: ${{ vars.EKS_PUBLIC_ACCESS_CIDRS }}
+      TF_VAR_tfstate_bucket_arn: ${{ vars.TF_STATE_BUCKET_ARN }}
+      TF_VAR_tfstate_lock_table_arn: ${{ vars.TF_STATE_LOCK_TABLE_ARN }}
+      TF_VAR_tfstate_kms_key_arn: ${{ vars.TF_STATE_KMS_KEY_ARN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Install Conftest
+        run: |
+          go install github.com/open-policy-agent/conftest@v0.56.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TF_PLAN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-3' }}
+      - name: Configure remote state backend
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_LOCK_TABLE: ${{ vars.TF_STATE_LOCK_TABLE }}
+          TF_STATE_KMS_KEY_ID: ${{ vars.TF_STATE_KMS_KEY_ID }}
+        run: |
+          test -n "$TF_STATE_BUCKET" && test -n "$TF_STATE_LOCK_TABLE" && test -n "$TF_STATE_KMS_KEY_ID"
+          printf 'bucket = "%s"\nkey = "taskflow/prod/terraform.tfstate"\nregion = "%s"\nencrypt = true\nkms_key_id = "%s"\ndynamodb_table = "%s"\n' "$TF_STATE_BUCKET" "${{ vars.AWS_REGION || 'eu-west-3' }}" "$TF_STATE_KMS_KEY_ID" "$TF_STATE_LOCK_TABLE" > backend.hcl
+      - run: terraform init -backend-config=backend.hcl
+      - run: terraform plan -no-color -out=tfplan
+      - run: terraform show -json tfplan > tfplan.json
+      - run: conftest test --policy ../../policy/terraform tfplan.json
+  apply:
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
+    runs-on: ubuntu-latest
+    environment: production-infra
+    defaults:
+      run:
+        working-directory: infrastructure/terraform
+    env:
+      TF_VAR_github_repository: ${{ github.repository }}
+      TF_VAR_aws_region: ${{ vars.AWS_REGION || 'eu-west-3' }}
+      TF_VAR_single_nat_gateway: ${{ vars.SINGLE_NAT_GATEWAY || 'false' }}
+      TF_VAR_db_multi_az: ${{ vars.DB_MULTI_AZ || 'true' }}
+      TF_VAR_acm_certificate_arn: ${{ vars.ACM_CERTIFICATE_ARN }}
+      TF_VAR_eks_public_access_cidrs: ${{ vars.EKS_PUBLIC_ACCESS_CIDRS }}
+      TF_VAR_tfstate_bucket_arn: ${{ vars.TF_STATE_BUCKET_ARN }}
+      TF_VAR_tfstate_lock_table_arn: ${{ vars.TF_STATE_LOCK_TABLE_ARN }}
+      TF_VAR_tfstate_kms_key_arn: ${{ vars.TF_STATE_KMS_KEY_ARN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Install Conftest
+        run: |
+          go install github.com/open-policy-agent/conftest@v0.56.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TF_APPLY }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-3' }}
+      - name: Configure remote state backend
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_LOCK_TABLE: ${{ vars.TF_STATE_LOCK_TABLE }}
+          TF_STATE_KMS_KEY_ID: ${{ vars.TF_STATE_KMS_KEY_ID }}
+        run: |
+          test -n "$TF_STATE_BUCKET" && test -n "$TF_STATE_LOCK_TABLE" && test -n "$TF_STATE_KMS_KEY_ID"
+          printf 'bucket = "%s"\nkey = "taskflow/prod/terraform.tfstate"\nregion = "%s"\nencrypt = true\nkms_key_id = "%s"\ndynamodb_table = "%s"\n' "$TF_STATE_BUCKET" "${{ vars.AWS_REGION || 'eu-west-3' }}" "$TF_STATE_KMS_KEY_ID" "$TF_STATE_LOCK_TABLE" > backend.hcl
+      - run: terraform init -backend-config=backend.hcl
+      - run: terraform plan -out=tfplan
+      - run: terraform show -json tfplan > tfplan.json
+      - run: conftest test --policy ../../policy/terraform tfplan.json
+      - run: terraform apply -auto-approve tfplan

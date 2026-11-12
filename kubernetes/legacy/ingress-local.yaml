@@ -1,0 +1,19 @@
+# Cluster local (kind/minikube avec ingress-nginx). Sur EKS, utiliser
+# targetgroupbinding-eks.yaml (l'ALB est géré par Terraform).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: taskflow
+  namespace: taskflow
+  labels: {app.kubernetes.io/part-of: taskflow}
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: taskflow.localtest.me
+      http:
+        paths:
+          - {path: /api, pathType: Prefix, backend: {service: {name: taskflow-api, port: {name: http}}}}
+          - {path: /up, pathType: Exact, backend: {service: {name: taskflow-api, port: {name: http}}}}
+          - {path: /, pathType: Prefix, backend: {service: {name: taskflow-frontend, port: {name: http}}}}

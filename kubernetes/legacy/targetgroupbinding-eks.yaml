@@ -1,0 +1,24 @@
+# Relie les Services aux Target Groups de l'ALB créé par Terraform (alb.tf).
+# Requiert l'AWS Load Balancer Controller (CRD TargetGroupBinding).
+# Remplacer les ARN par : terraform output alb_target_group_arns
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: taskflow-frontend
+  namespace: taskflow
+  labels: {app.kubernetes.io/part-of: taskflow}
+spec:
+  serviceRef: {name: taskflow-frontend, port: 80}
+  targetGroupARN: REPLACE_WITH_FRONTEND_TG_ARN
+  targetType: ip
+---
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: taskflow-api
+  namespace: taskflow
+  labels: {app.kubernetes.io/part-of: taskflow}
+spec:
+  serviceRef: {name: taskflow-api, port: 80}
+  targetGroupARN: REPLACE_WITH_API_TG_ARN
+  targetType: ip

@@ -1,0 +1,26 @@
+{{- if .Values.targetGroupBinding.enabled }}
+{{- $fn := include "taskflow.fullname" . }}
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: {{ $fn }}-frontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "taskflow.labels" . | nindent 4 }}
+spec:
+  serviceRef: {name: {{ $fn }}-frontend, port: 80}
+  targetGroupARN: {{ required "targetGroupBinding.frontendArn est requis" .Values.targetGroupBinding.frontendArn | quote }}
+  targetType: ip
+---
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: {{ $fn }}-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "taskflow.labels" . | nindent 4 }}
+spec:
+  serviceRef: {name: {{ $fn }}-api, port: 80}
+  targetGroupARN: {{ required "targetGroupBinding.apiArn est requis" .Values.targetGroupBinding.apiArn | quote }}
+  targetType: ip
+{{- end }}

@@ -1,6 +1,6 @@
 {
   "uid": "taskflow-overview",
-  "title": "TaskFlow — Vue d'ensemble",
+  "title": "TaskFlow - Vue d'ensemble",
   "tags": [
     "taskflow"
   ],
@@ -9,14 +9,14 @@
   "version": 1,
   "refresh": "30s",
   "time": {
-    "from": "now-3h",
+    "from": "now-6h",
     "to": "now"
   },
   "panels": [
     {
       "id": 1,
-      "title": "Cibles Prometheus (up)",
       "type": "stat",
+      "title": "Disponibilité (sondes)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -24,430 +24,218 @@
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 24,
-        "h": 4
+        "w": 6,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "up",
-          "legendFormat": "{{job}}"
+          "expr": "min by (instance) (probe_success{job=\"taskflow-blackbox\"})",
+          "legendFormat": "{{instance}}"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "DOWN",
-                  "color": "red"
-                },
-                "1": {
-                  "text": "UP",
-                  "color": "green"
-                }
-              }
-            }
-          ]
-        },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        }
-      }
+      ]
     },
     {
       "id": 2,
-      "title": "CPU hôte",
       "type": "timeseries",
+      "title": "Latence des sondes",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 0,
-        "y": 4,
-        "w": 8,
-        "h": 8
+        "x": 6,
+        "y": 0,
+        "w": 18,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
-          "legendFormat": "CPU"
+          "expr": "probe_duration_seconds{job=\"taskflow-blackbox\"}",
+          "legendFormat": "{{instance}}"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 100
-        },
-        "overrides": []
-      }
+      ]
     },
     {
       "id": 3,
-      "title": "Mémoire hôte",
       "type": "timeseries",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 8,
-        "y": 4,
-        "w": 8,
-        "h": 8
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100",
-          "legendFormat": "Mémoire"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 100
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 4,
-      "title": "Disque (xfs/ext4)",
-      "type": "timeseries",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 4,
-        "w": 8,
-        "h": 8
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "(1 - node_filesystem_avail_bytes{fstype=~\"xfs|ext4\"} / node_filesystem_size_bytes{fstype=~\"xfs|ext4\"}) * 100",
-          "legendFormat": "{{mountpoint}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 100
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 5,
-      "title": "CPU par conteneur",
-      "type": "timeseries",
+      "title": "Pods disponibles / souhaités",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "x": 0,
-        "y": 12,
+        "y": 5,
         "w": 12,
         "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{name!=\"\"}[5m])) * 100",
-          "legendFormat": "{{name}}"
+          "expr": "kube_deployment_status_replicas_available{namespace=\"taskflow\"}",
+          "legendFormat": "{{deployment}}"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent"
-        },
-        "overrides": []
-      }
+      ]
     },
     {
-      "id": 6,
-      "title": "Mémoire par conteneur",
+      "id": 4,
       "type": "timeseries",
+      "title": "Redémarrages de conteneurs (15 min)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "x": 12,
-        "y": 12,
+        "y": 5,
         "w": 12,
         "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by (name) (container_memory_working_set_bytes{name!=\"\"})",
-          "legendFormat": "{{name}}"
+          "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"taskflow\"}[15m])",
+          "legendFormat": "{{pod}}"
         }
-      ],
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "CPU par pod",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"taskflow\",container!=\"\"}[5m]))",
+          "legendFormat": "{{pod}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Mémoire par pod",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "bytes"
         },
         "overrides": []
-      }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"taskflow\",container!=\"\"})",
+          "legendFormat": "{{pod}}"
+        }
+      ]
     },
     {
       "id": 7,
-      "title": "Trafic réseau hôte",
       "type": "timeseries",
+      "title": "Réplicas HPA",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "x": 0,
-        "y": 20,
-        "w": 8,
+        "y": 21,
+        "w": 12,
         "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(rate(node_network_receive_bytes_total{device!~\"lo|docker.*|br-.*|veth.*\"}[5m]))",
-          "legendFormat": "Entrant"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(rate(node_network_transmit_bytes_total{device!~\"lo|docker.*|br-.*|veth.*\"}[5m]))",
-          "legendFormat": "Sortant"
+          "expr": "kube_horizontalpodautoscaler_status_current_replicas{namespace=\"taskflow\"}",
+          "legendFormat": "{{horizontalpodautoscaler}}"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps"
-        },
-        "overrides": []
-      }
+      ]
     },
     {
       "id": 8,
-      "title": "Requêtes nginx / s",
       "type": "timeseries",
+      "title": "Violations de politiques Kyverno (24 h)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 8,
-        "y": 20,
-        "w": 8,
+        "x": 12,
+        "y": 21,
+        "w": 12,
         "h": 8
       },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "rate(nginx_http_requests_total[1m])",
-          "legendFormat": "Requêtes"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps"
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 9,
-      "title": "Connexions nginx actives",
-      "type": "timeseries",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 20,
-        "w": 8,
-        "h": 8
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "nginx_connections_active",
-          "legendFormat": "Actives"
-        }
-      ],
       "fieldConfig": {
         "defaults": {
           "unit": "short"
         },
         "overrides": []
-      }
-    },
-    {
-      "id": 10,
-      "title": "MySQL — connexions",
-      "type": "timeseries",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 28,
-        "w": 8,
-        "h": 8
       },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "mysql_global_status_threads_connected",
-          "legendFormat": "Connectées"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "mysql_global_variables_max_connections",
-          "legendFormat": "Maximum"
+          "expr": "sum by (policy_name, rule_name) (increase(kyverno_policy_results_total{rule_result=\"fail\",resource_namespace=\"taskflow\"}[24h]))",
+          "legendFormat": "{{policy_name}}/{{rule_name}}"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 11,
-      "title": "MySQL — requêtes / s",
-      "type": "timeseries",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 8,
-        "y": 28,
-        "w": 8,
-        "h": 8
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "rate(mysql_global_status_queries[1m])",
-          "legendFormat": "Requêtes"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps"
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 12,
-      "title": "MySQL — requêtes lentes",
-      "type": "timeseries",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 16,
-        "y": 28,
-        "w": 8,
-        "h": 8
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "increase(mysql_global_status_slow_queries[5m])",
-          "legendFormat": "Lentes (5 min)"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      }
+      ]
     }
-  ],
-  "templating": {
-    "list": []
-  },
-  "editable": false
+  ]
 }

@@ -1,0 +1,21 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: taskflow-require-labels
+  annotations:
+    policies.kyverno.io/title: Labels de gouvernance obligatoires
+    policies.kyverno.io/category: Best Practices
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-part-of
+      match:
+        any:
+          - resources: {kinds: [Deployment, StatefulSet, Job, CronJob], namespaces: [taskflow]}
+      validate:
+        message: "Label app.kubernetes.io/part-of obligatoire."
+        pattern:
+          metadata:
+            labels:
+              app.kubernetes.io/part-of: "?*"

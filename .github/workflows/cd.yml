@@ -1,93 +1,128 @@
-
-name: CD - Build & Push Docker Images
+name: CD - GitOps Update & Argo CD
 
 on:
   workflow_run:
-    workflows: ["CI - Tests, Security & Quality"]
+    workflows: ["CI - Tests, Security, Quality & Docker Hub"]
     types:
       - completed
     branches:
       - main
 
-env:
-  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-  IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+permissions:
+  contents: read
+
+concurrency:
+  group: taskflow-cd-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
 
 jobs:
-  build-and-push:
+  gitops-update:
+    name: GitOps - Update Docker Hub image digests
+    if: >-
+      ${{
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main'
+      }}
     runs-on: ubuntu-latest
 
-    # Le build démarre uniquement si la CI a réussi
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: write
+      pull-requests: write
+
+    env:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
 
     steps:
-      - name: Checkout code
+      - name: Checkout main
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: main
+          persist-credentials: false
 
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
+      - name: Validate required secrets
+        env:
+          USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          GH_APP_TOKEN: ${{ secrets.GH_APP_TOKEN }}
+        run: |
+          test -n "$USERNAME" || { echo "::error::Secret DOCKER_USERNAME manquant"; exit 1; }
+          test -n "$GH_APP_TOKEN" || { echo "::error::Secret GH_APP_TOKEN manquant"; exit 1; }
+
+      - name: Install Skopeo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          go-version: "1.24"
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Install yq
+        run: |
+          go install github.com/mikefarah/yq/v4@v4.45.1
 
-      # ====================================
-      # BUILD LARAVEL
-      # ====================================
-      - name: Build Laravel image
-        uses: docker/build-push-action@v6
+      # Les dépôts Docker Hub sont publics : aucune connexion Docker Hub
+      # n'est nécessaire pour lire les digests.
+      - name: Resolve published Docker Hub digests
+        id: digests
+        run: |
+          API_DIGEST="$(skopeo inspect --format '{{.Digest}}' \
+            "docker://docker.io/${DOCKER_USERNAME}/laravel-api:${IMAGE_TAG}")"
+          FRONTEND_DIGEST="$(skopeo inspect --format '{{.Digest}}' \
+            "docker://docker.io/${DOCKER_USERNAME}/react-frontend:${IMAGE_TAG}")"
+
+          test -n "$API_DIGEST" || { echo "::error::Digest API introuvable"; exit 1; }
+          test -n "$FRONTEND_DIGEST" || { echo "::error::Digest frontend introuvable"; exit 1; }
+
+          echo "api_digest=$API_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "frontend_digest=$FRONTEND_DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Update Helm values with immutable image references
+        env:
+          API_DIGEST: ${{ steps.digests.outputs.api_digest }}
+          FRONTEND_DIGEST: ${{ steps.digests.outputs.frontend_digest }}
+        run: |
+          set -euo pipefail
+          VALUES_FILE="helm/taskflow/values-eks.yaml"
+
+          test -f "$VALUES_FILE" || {
+            echo "::error::Fichier $VALUES_FILE introuvable"
+            exit 1
+          }
+
+          yq -i '
+            .image.registry = "docker.io" |
+            .image.tag = strenv(IMAGE_TAG) |
+            .api.image.repository = (strenv(DOCKER_USERNAME) + "/laravel-api") |
+            .api.image.digest = strenv(API_DIGEST) |
+            .frontend.image.repository = (strenv(DOCKER_USERNAME) + "/react-frontend") |
+            .frontend.image.digest = strenv(FRONTEND_DIGEST)
+          ' "$VALUES_FILE"
+
+          echo "Images configurées :"
+          yq '.image, .api.image, .frontend.image' "$VALUES_FILE"
+
+      - name: Create GitOps pull request
+        uses: peter-evans/create-pull-request@v7
         with:
-          context: ./backend
-          push: false
-          load: true
-          tags: ${{ env.DOCKER_USERNAME }}/laravel-api:${{ env.IMAGE_TAG }}
-          cache-from: type=gha,scope=laravel
-          cache-to: type=gha,mode=max,scope=laravel
+          token: ${{ secrets.GH_APP_TOKEN }}
+          branch: gitops/taskflow-${{ github.event.workflow_run.head_sha }}
+          delete-branch: true
+          title: "chore(gitops): deploy TaskFlow ${{ github.event.workflow_run.head_sha }}"
+          commit-message: "chore(gitops): update Docker Hub image digests"
+          body: |
+            ## Mise à jour GitOps TaskFlow
 
-      # ====================================
-      # BUILD FRONTEND
-      # ====================================
-      - name: Build frontend image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./frontend
-          push: false
-          load: true
-          tags: ${{ env.DOCKER_USERNAME }}/react-frontend:${{ env.IMAGE_TAG }}
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
+            La CI sur `main` a réussi.
 
-      # ====================================
-      # TRIVY - LARAVEL
-      # ====================================
-      - name: Scan Laravel image (Trivy)
-        uses: aquasecurity/trivy-action@0.35.0
-        with: 
-          image-ref: ${{ env.DOCKER_USERNAME }}/laravel-api:${{ env.IMAGE_TAG }}
-          format: table
-          exit-code: 1
-          severity: CRITICAL,HIGH
+            - Images construites et publiées sur Docker Hub.
+            - Images analysées avec Trivy avant publication.
+            - Digests immuables récupérés depuis Docker Hub.
+            - Valeurs Helm mises à jour avec les références `sha256`.
 
-      # ====================================
-      # TRIVY - FRONTEND
-      # ====================================
-      - name: Scan frontend image (Trivy)
-        uses: aquasecurity/trivy-action@0.35.0
-        with:
-          image-ref: ${{ env.DOCKER_USERNAME }}/react-frontend:${{ env.IMAGE_TAG }}
-          format: table
-          exit-code: 1
-          severity: CRITICAL,HIGH
+            Après vérification et fusion de cette PR, Argo CD synchronisera
+            l'état déclaré dans Git avec le cluster Amazon EKS.
 
-      # ====================================
-      # PUSH - uniquement après les scans réussis
-      # ====================================
-      - name: Push Laravel image
-        run: docker push "$DOCKER_USERNAME/laravel-api:$IMAGE_TAG"
-
-      - name: Push frontend image
-        run: docker push "$DOCKER_USERNAME/react-frontend:$IMAGE_TAG"
+            Aucun déploiement direct sur EKS n'est effectué par GitHub Actions.
+          add-paths: helm/taskflow/values-eks.yaml

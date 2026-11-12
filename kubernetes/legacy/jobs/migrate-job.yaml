@@ -1,0 +1,48 @@
+# Migrations de base de données (une seule exécution par release).
+# JAMAIS de --seed ici : les comptes de démo ne doivent pas exister en production.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: taskflow-migrate
+  namespace: taskflow
+  labels: {app.kubernetes.io/name: taskflow-migrate, app.kubernetes.io/part-of: taskflow}
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: taskflow-migrate, app.kubernetes.io/part-of: taskflow}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: taskflow-api
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 82
+        runAsGroup: 82
+        fsGroup: 82
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: migrate
+          image: ACCOUNT_ID.dkr.ecr.eu-west-3.amazonaws.com/taskflow/laravel-api:0.0.0-replace-me
+          imagePullPolicy: IfNotPresent
+          args: ["php", "artisan", "migrate", "--force"]
+          envFrom:
+            - configMapRef: {name: taskflow-api-config}
+            - secretRef: {name: taskflow-api-secrets}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 300m, memory: 256Mi}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: storage, mountPath: /var/www/html/storage}
+            - {name: bootstrap-cache, mountPath: /var/www/html/bootstrap/cache}
+      volumes:
+        - {name: tmp, emptyDir: {sizeLimit: 32Mi}}
+        - {name: storage, emptyDir: {sizeLimit: 64Mi}}
+        - {name: bootstrap-cache, emptyDir: {sizeLimit: 32Mi}}

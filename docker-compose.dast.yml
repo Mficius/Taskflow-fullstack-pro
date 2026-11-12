@@ -6,7 +6,7 @@ services:
   db:
     image: mysql:8.4
     environment:
-      MYSQL_ROOT_PASSWORD: dast-root-only-for-ci
+      MYSQL_ROOT_PASSWORD: ""
       MYSQL_DATABASE: taskflow
       MYSQL_USER: taskflow
       MYSQL_PASSWORD: dast-ci-password
@@ -25,7 +25,7 @@ services:
       APP_NAME: TaskFlow
       APP_ENV: staging          # != production : permet le seed de démonstration
       APP_DEBUG: "false"
-      APP_KEY: base64:Zm9yLWNpLWRhc3Qtb25seS0zMi1ieXRlcy1rZXkhISE=
+      APP_KEY: ""
       APP_URL: http://localhost:8080
       DB_CONNECTION: mysql
       DB_HOST: db

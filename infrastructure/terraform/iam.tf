@@ -137,9 +137,9 @@ data "aws_iam_policy_document" "tf_plan_deny_secret_values" {
   # Le provider Terraform doit rafraîchir les 3 versions de secrets qu'il gère.
   # Tous les autres secrets, notamment le secret maître RDS, restent interdits.
   statement {
-    sid           = "DenyUnmanagedSecretValues"
-    effect        = "Deny"
-    actions       = ["secretsmanager:GetSecretValue"]
+    sid     = "DenyUnmanagedSecretValues"
+    effect  = "Deny"
+    actions = ["secretsmanager:GetSecretValue"]
     not_resources = [
       aws_secretsmanager_secret.app.arn,
       aws_secretsmanager_secret.db_app.arn,
@@ -328,7 +328,7 @@ resource "aws_iam_role_policy" "external_secrets" {
 data "aws_iam_policy_document" "taskflow_app_s3" {
   statement {
     sid       = "ListTaskflowBucket"
-    actions = ["s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:GetBucketLocation"]
+    actions   = ["s3:ListBucket", "s3:ListBucketMultipartUploads", "s3:GetBucketLocation"]
     resources = [aws_s3_bucket.app_files.arn]
   }
   statement {

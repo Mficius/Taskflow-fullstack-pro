@@ -1,5 +1,20 @@
-name: Terraform
+name: Infra - Security, Validation & Terraform
+
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'infrastructure/**'
+      - 'helm/**'
+      - 'policy/**'
+      - '.github/workflows/infra.yaml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infrastructure/**'
+      - 'helm/**'
+      - 'policy/**'
+      - '.github/workflows/infra.yaml'
   workflow_dispatch:
     inputs:
       action:
@@ -7,12 +22,111 @@ on:
         type: choice
         options: [plan, apply]
         default: plan
+
 permissions:
   contents: read
   id-token: write
+
 jobs:
-  plan:
-    if: inputs.action == 'plan'
+  # ====================================
+  # 1. SÉCURITÉ IaC (Checkov & Trivy)
+  # ====================================
+  iac-security:
+    name: IaC Security - Checkov & Trivy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Infrastructure scan - Checkov
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infrastructure/terraform
+          quiet: true
+          soft_fail: false
+
+      - name: Misconfiguration scan - Trivy
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: misconfig
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+
+  # ====================================
+  # 2. HELM & POLITIQUES OPA
+  # ====================================
+  helm-and-opa:
+    name: Helm - Lint, render & OPA policies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.17.3
+
+      - name: Lint production chart
+        run: helm lint helm/taskflow -f helm/taskflow/values-eks.yaml
+
+      - name: Render production manifests
+        run: helm template taskflow-production helm/taskflow --namespace taskflow -f helm/taskflow/values-eks.yaml > /tmp/taskflow-rendered.yaml
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install Conftest
+        run: |
+          go install ://github.com
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Verify OPA policy tests
+        run: |
+          conftest verify --policy policy/terraform
+          conftest verify --policy policy/kubernetes
+
+      - name: Enforce Kubernetes policies on rendered Helm manifests
+        run: conftest test --policy policy/kubernetes /tmp/taskflow-rendered.yaml
+
+  # ====================================
+  # 3. TERRAFORM FORMAT & VALIDATE
+  # ====================================
+  terraform-validate:
+    name: Terraform - Format & Validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure/terraform
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+
+      - name: Check formatting
+        run: terraform fmt -check -diff -recursive
+
+      - name: Initialize without remote backend
+        run: terraform init -backend=false -input=false
+
+      - name: Validate Terraform
+        run: terraform validate
+
+  # ====================================
+  # 4. TERRAFORM PLAN (Manuel uniquement)
+  # ====================================
+  terraform-plan:
+    name: Terraform - Plan
+    needs: [iac-security, helm-and-opa, terraform-validate]
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'plan'
     runs-on: ubuntu-latest
     environment: terraform-plan
     defaults:
@@ -38,7 +152,7 @@ jobs:
           go-version: '1.24'
       - name: Install Conftest
         run: |
-          go install github.com/open-policy-agent/conftest@v0.56.0
+          go install ://github.com
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -56,7 +170,13 @@ jobs:
       - run: terraform plan -no-color -out=tfplan
       - run: terraform show -json tfplan > tfplan.json
       - run: conftest test --policy ../../policy/terraform tfplan.json
-  apply:
+
+  # ====================================
+  # 5. TERRAFORM APPLY (Manuel uniquement)
+  # ====================================
+  terraform-apply:
+    name: Terraform - Apply
+    needs: [iac-security, helm-and-opa, terraform-validate]
     if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
     runs-on: ubuntu-latest
     environment: production-infra
@@ -83,7 +203,7 @@ jobs:
           go-version: '1.24'
       - name: Install Conftest
         run: |
-          go install github.com/open-policy-agent/conftest@v0.56.0
+          go install ://github.com
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - uses: aws-actions/configure-aws-credentials@v4
         with:

@@ -1,0 +1,73 @@
+name: CD - Promote Staging to Production
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'helm/taskflow/values-staging.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  promote-prod:
+    name: GitOps - Promote digests to Production
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Install yq
+        run: |
+          curl -sL https://github.com -o /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+
+      - name: Copy verified digests from Staging to Prod
+        id: promote
+        run: |
+          STAGING="helm/taskflow/values-staging.yaml"
+          PROD="helm/taskflow/values-prod.yaml"
+
+          TAG=$(yq '.image.tag' "$STAGING")
+          API_REPO=$(yq '.api.image.repository' "$STAGING")
+          API_DIGEST=$(yq '.api.image.digest' "$STAGING")
+          FE_REPO=$(yq '.frontend.image.repository' "$STAGING")
+          FE_DIGEST=$(yq '.frontend.image.digest' "$STAGING")
+
+          test -n "$API_DIGEST" && test "$API_DIGEST" != "null"
+
+          yq -i "
+            .image.tag = \"$TAG\" |
+            .api.image.repository = \"$API_REPO\" |
+            .api.image.digest = \"$API_DIGEST\" |
+            .frontend.image.repository = \"$FE_REPO\" |
+            .frontend.image.digest = \"$FE_DIGEST\"
+          " "$PROD"
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create Production Promotion PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GH_APP_TOKEN }}
+          branch: gitops/prod-${{ steps.promote.outputs.tag }}
+          delete-branch: true
+          title: "chore(prod): promote TaskFlow ${{ steps.promote.outputs.tag }} to Production"
+          commit-message: "chore(prod): promote verified digests from staging"
+          body: |
+            ## 🚀 Promotion en Production — TaskFlow
+
+            Les digests suivants ont été déployés et validés sur **Staging** :
+            - **Tag / Commit :** `${{ steps.promote.outputs.tag }}`
+            - **API Digest :** `${{ env.API_DIGEST }}`
+
+            Fusionner cette PR déclenchera la synchronisation **Argo CD** vers le cluster de Production.
+          add-paths: helm/taskflow/values-eks.yaml

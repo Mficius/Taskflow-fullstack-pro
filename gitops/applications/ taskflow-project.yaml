@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: taskflow
+  namespace: argocd
+spec:
+  description: TaskFlow workloads (Staging & Production)
+
+  sourceRepos:
+    - https://github.com/Mficius/Taskflow-fullstack-pro.git
+
+  destinations:
+    - namespace: taskflow-staging
+      server: https://kubernetes.default.svc
+    - namespace: taskflow
+      server: https://kubernetes.default.svc
+
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

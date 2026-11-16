@@ -1,0 +1,53 @@
+image:
+  registry: docker.io
+  tag: bootstrap
+  pullPolicy: IfNotPresent
+
+api:
+  image:
+    repository: cloudopsenglab/laravel-api
+    digest: ""
+  replicas: 1
+  autoscaling:
+    enabled: false
+  config:
+    APP_ENV: staging
+    APP_DEBUG: "false"
+    APP_URL: https://staging.taskflow.example.com
+    CORS_ALLOWED_ORIGINS: https://staging.taskflow.example.com
+    DB_HOST: REPLACE_WITH_STAGING_RDS_ENDPOINT
+    DB_PORT: "3306"
+    DB_DATABASE: taskflow_staging
+    AWS_BUCKET: REPLACE_WITH_STAGING_FILES_BUCKET
+    MYSQL_ATTR_SSL_CA: /etc/ssl/certs/rds-global-bundle.pem
+
+frontend:
+  image:
+    repository: cloudopsenglab/react-frontend
+    digest: ""
+  replicas: 1
+  autoscaling:
+    enabled: false
+
+worker:
+  enabled: true
+  replicas: 1
+
+secrets:
+  external:
+    enabled: true
+    region: eu-west-3
+    appSecretName: taskflow/staging/laravel
+    dbAppSecretArn: REPLACE_WITH_STAGING_RDS_APP_SECRET_ARN
+    dbMigratorSecretArn: REPLACE_WITH_STAGING_RDS_MIGRATOR_SECRET_ARN
+
+serviceAccount:
+  apiRoleArn: REPLACE_WITH_STAGING_TASKFLOW_APP_IRSA_ROLE_ARN
+
+targetGroupBinding:
+  enabled: true
+  frontendArn: REPLACE_WITH_STAGING_FRONTEND_TG_ARN
+  apiArn: REPLACE_WITH_STAGING_API_TG_ARN
+
+pdb:
+  enabled: false

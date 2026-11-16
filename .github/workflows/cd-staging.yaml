@@ -1,0 +1,77 @@
+name: CD - Deploy to Staging
+
+on:
+  workflow_run:
+    workflows: ["CI - App Tests, Security & Docker Hub"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: taskflow-cd-staging-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  gitops-staging:
+    name: GitOps - Update Staging image digests
+    if: >-
+      ${{
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main'
+      }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Install Skopeo & yq
+        run: |
+          sudo apt-get update && sudo apt-get install -y skopeo
+          curl -sL https://github.com -o /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+
+      - name: Resolve published Docker Hub digests
+        id: digests
+        run: |
+          API_DIGEST="$(skopeo inspect --format '{{.Digest}}' "docker://docker.io/${DOCKER_USERNAME}/laravel-api:${IMAGE_TAG}")"
+          FRONTEND_DIGEST="$(skopeo inspect --format '{{.Digest}}' "docker://docker.io/${DOCKER_USERNAME}/react-frontend:${IMAGE_TAG}")"
+          test -n "$API_DIGEST" && test -n "$FRONTEND_DIGEST"
+          echo "api_digest=$API_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "frontend_digest=$FRONTEND_DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Update Staging Helm values
+        env:
+          API_DIGEST: ${{ steps.digests.outputs.api_digest }}
+          FRONTEND_DIGEST: ${{ steps.digests.outputs.frontend_digest }}
+        run: |
+          VALUES_FILE="helm/taskflow/values-staging.yaml"
+          yq -i '
+            .image.registry = "docker.io" |
+            .image.tag = strenv(IMAGE_TAG) |
+            .api.image.repository = (strenv(DOCKER_USERNAME) + "/laravel-api") |
+            .api.image.digest = strenv(API_DIGEST) |
+            .frontend.image.repository = (strenv(DOCKER_USERNAME) + "/react-frontend") |
+            .frontend.image.digest = strenv(FRONTEND_DIGEST)
+          ' "$VALUES_FILE"
+
+      - name: Create Staging GitOps PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GH_APP_TOKEN }}
+          branch: gitops/staging-${{ github.event.workflow_run.head_sha }}
+          delete-branch: true
+          title: "chore(staging): deploy TaskFlow ${{ github.event.workflow_run.head_sha }}"
+          commit-message: "chore(staging): update image digests"
+          add-paths: helm/taskflow/values-staging.yaml

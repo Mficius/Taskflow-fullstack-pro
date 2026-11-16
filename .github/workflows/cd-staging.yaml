@@ -36,19 +36,11 @@ jobs:
           ref: main
           persist-credentials: false
 
-      - name: Install Skopeo
+      - name: Install Skopeo & yq
         run: |
           sudo apt-get update
           sudo apt-get install -y skopeo
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
- 
-      - name: Install yq
-        run: |
-          go install ://github.com
+          sudo snap install yq
 
 
       - name: Resolve published Docker Hub digests

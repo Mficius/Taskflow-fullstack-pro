@@ -12,6 +12,7 @@ resource "aws_cloudwatch_log_group" "eks" {
 resource "aws_eks_cluster" "main" {
   #checkov:skip=CKV_AWS_38:CIDR restreints par variable (0.0.0.0/0 interdit par validation) ; mettre eks_endpoint_public_access=false pour une API 100% privée
   #checkov:skip=CKV_AWS_39:Endpoint public conditionnel (variable) - voir ci-dessus
+  #checkov:skip=CKV_AWS_339:Version Kubernetes gérée par variable var.eks_version
   name     = local.name
   version  = var.eks_version
   role_arn = aws_iam_role.eks_cluster.arn
@@ -73,6 +74,7 @@ resource "aws_launch_template" "nodes" {
       volume_size           = 40
       volume_type           = "gp3"
       encrypted             = true
+      kms_key_id            = aws_kms_key.main.arn
       delete_on_termination = true
     }
   }
@@ -122,7 +124,6 @@ resource "aws_eks_node_group" "main" {
     aws_iam_role_policy_attachment.eks_nodes,
     aws_eks_addon.vpc_cni,
   ]
-
 }
 
 # ---- Add-ons gérés -------------------------------------------------------------

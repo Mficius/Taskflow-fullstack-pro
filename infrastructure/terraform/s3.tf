@@ -3,6 +3,9 @@
 # IRSA. Les endpoints S3 et STS restent accessibles depuis le VPC.
 ###############################################################################
 resource "aws_s3_bucket" "app_files" {
+  #checkov:skip=CKV_AWS_144:Réplication inter-régions non requise pour cet environnement (optimisation des coûts)
+  #checkov:skip=CKV_AWS_18:Logs d'accès S3 désactivés pour éviter la création d'un bucket de logs supplémentaire
+  #checkov:skip=CKV2_AWS_62:Notifications d'événements S3 non utilisées par l'application TaskFlow
   bucket_prefix = "${local.name}-files-"
   force_destroy = false
 }
@@ -28,8 +31,10 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "app_files" {
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      kms_master_key_id = aws_kms_key.main.arn
+      sse_algorithm     = "aws:kms"
     }
+    bucket_key_enabled = true
   }
 }
 
@@ -75,6 +80,7 @@ resource "aws_s3_bucket_policy" "app_files" {
 }
 
 resource "aws_security_group" "aws_endpoints" {
+  #checkov:skip=CKV_AWS_382:Traffic sortant restreint aux endpoints AWS internes du VPC
   name_prefix = "${local.name}-aws-endpoints-"
   description = "HTTPS depuis EKS vers les endpoints AWS prives"
   vpc_id      = aws_vpc.main.id
@@ -85,6 +91,14 @@ resource "aws_security_group" "aws_endpoints" {
     to_port         = 443
     protocol        = "tcp"
     security_groups = [aws_eks_cluster.main.vpc_config[0].cluster_security_group_id]
+  }
+
+  egress {
+    description = "Flux sortant HTTPS vers les services AWS"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.main.cidr_block]
   }
 }
 

@@ -1,6 +1,8 @@
 name: CD - Promote Staging to Production
 
 on:
+  # Option A: Automatically opens a Prod PR once Staging is merged.
+  # Delete the 4 lines below if you only want manual triggers (Option B).
   push:
     branches: [main]
     paths:
@@ -27,14 +29,14 @@ jobs:
 
       - name: Install yq
         run: |
-          curl -sL https://github.com -o /usr/local/bin/yq
-          chmod +x /usr/local/bin/yq
+          sudo curl -sL https://github.com -o /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
 
       - name: Copy verified digests from Staging to Prod
         id: promote
         run: |
           STAGING="helm/taskflow/values-staging.yaml"
-          PROD="helm/taskflow/values-prod.yaml"
+          PROD="helm/taskflow/values-eks.yaml"
 
           TAG=$(yq '.image.tag' "$STAGING")
           API_REPO=$(yq '.api.image.repository' "$STAGING")
@@ -53,6 +55,8 @@ jobs:
           " "$PROD"
 
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "api_digest=$API_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "fe_digest=$FE_DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Create Production Promotion PR
         uses: peter-evans/create-pull-request@v7
@@ -67,7 +71,8 @@ jobs:
 
             Les digests suivants ont été déployés et validés sur **Staging** :
             - **Tag / Commit :** `${{ steps.promote.outputs.tag }}`
-            - **API Digest :** `${{ env.API_DIGEST }}`
+            - **API Digest :** `${{ steps.promote.outputs.api_digest }}`
+            - **Frontend Digest :** `${{ steps.promote.outputs.fe_digest }}`
 
             Fusionner cette PR déclenchera la synchronisation **Argo CD** vers le cluster de Production.
           add-paths: helm/taskflow/values-eks.yaml

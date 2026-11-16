@@ -7,11 +7,7 @@ image:
 api:
   image:
     repository: cloudopsenglab/laravel-api
-<<<<<<< HEAD
     digest: "sha256:81bf86f7a2faae5eff6b653d3777d270437363b5f449d718bb50a903f2d27f7a"
-=======
-    digest: ""
->>>>>>> 303a42b (New changes)
   replicas: 2
   config:
     APP_ENV: production
@@ -30,11 +26,7 @@ api:
 frontend:
   image:
     repository: cloudopsenglab/react-frontend
-<<<<<<< HEAD
     digest: "sha256:b33553a1b9b73b30ae123a237afef1e4754d9ad0fd65dbed35986e724d2ad254"
-=======
-    digest: ""
->>>>>>> 303a42b (New changes)
   replicas: 2
 worker:
   enabled: true

@@ -110,11 +110,13 @@ resource "random_password" "db_app" {
 }
 
 resource "aws_secretsmanager_secret" "db_app" {
+  #checkov:skip=CKV2_AWS_57:Compte SQL secondaire géré via runbook sans fonction Lambda de rotation dédiée
   name                    = "${var.project_name}/${var.environment}/database-app"
   description             = "Compte MySQL applicatif TaskFlow (jamais le compte maître RDS)"
   kms_key_id              = aws_kms_key.main.arn
   recovery_window_in_days = 7
 }
+
 
 resource "aws_secretsmanager_secret_version" "db_app" {
   secret_id = aws_secretsmanager_secret.db_app.id
@@ -132,11 +134,13 @@ resource "random_password" "db_migrator" {
 }
 
 resource "aws_secretsmanager_secret" "db_migrator" {
+  #checkov:skip=CKV2_AWS_57:Compte SQL secondaire réservé aux migrations sans fonction Lambda de rotation dédiée
   name                    = "${var.project_name}/${var.environment}/database-migrator"
   description             = "Compte MySQL réservé aux migrations Laravel"
   kms_key_id              = aws_kms_key.main.arn
   recovery_window_in_days = 7
 }
+
 
 resource "aws_secretsmanager_secret_version" "db_migrator" {
   secret_id = aws_secretsmanager_secret.db_migrator.id

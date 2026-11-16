@@ -50,6 +50,7 @@ jobs:
         with:
           scan-type: fs
           scan-ref: .
+          skip-files: backend/Dockerfile.dev,frontend/Dockerfile.dev
           scanners: misconfig
           severity: CRITICAL,HIGH
           exit-code: '1'

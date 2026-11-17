@@ -1,68 +1,71 @@
 name: Infra - Security, Validation & Terraform
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'infrastructure/**'
-      - 'helm/**'
-      - 'policy/**'
-      - '.github/workflows/infra.yaml'
   pull_request:
     branches: [main]
     paths:
-      - 'infrastructure/**'
-      - 'helm/**'
-      - 'policy/**'
-      - '.github/workflows/infra.yaml'
+      - "infrastructure/**"
+      - "helm/**"
+      - "policy/**"
+      - ".github/workflows/infra.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "infrastructure/**"
+      - "helm/**"
+      - "policy/**"
+      - ".github/workflows/infra.yaml"
   workflow_dispatch:
-    inputs:
-      action:
-        description: Terraform action
-        type: choice
-        options: [plan, apply]
-        default: plan
 
+# Least privilege by default. AWS OIDC permission is granted only to jobs that need it.
 permissions:
   contents: read
-  id-token: write
+
+concurrency:
+  group: terraform-production-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'eu-west-3' }}
+  TF_VERSION: "1.10.5"
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
 
 jobs:
-  # ====================================
-  # 1. SÉCURITÉ IaC (Checkov & Trivy)
-  # ====================================
+  # ---------------------------------------------------------------------------
+  # 1. IaC security scans - no AWS credentials
+  # ---------------------------------------------------------------------------
   iac-security:
     name: IaC Security - Checkov & Trivy
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Infrastructure scan - Checkov
+      - name: Checkov - Terraform scan
         uses: bridgecrewio/checkov-action@v12
         with:
           directory: infrastructure/terraform
           quiet: true
           soft_fail: false
 
-      - name: Misconfiguration scan - Trivy
+      - name: Trivy - filesystem misconfiguration scan
         uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: fs
           scan-ref: .
-          skip-files: backend/Dockerfile.dev,frontend/Dockerfile.dev
           scanners: misconfig
           severity: CRITICAL,HIGH
-          exit-code: '1'
+          exit-code: "1"
 
-  # ====================================
-  # 2. HELM & POLITIQUES OPA
-  # ====================================
+  # ---------------------------------------------------------------------------
+  # 2. Helm rendering and OPA policy tests - no AWS credentials
+  # ---------------------------------------------------------------------------
   helm-and-opa:
-    name: Helm - Lint, render & OPA policies
+    name: Helm - Lint, Render & OPA
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Helm
@@ -74,12 +77,16 @@ jobs:
         run: helm lint helm/taskflow -f helm/taskflow/values-eks.yaml
 
       - name: Render production manifests
-        run: helm template taskflow-production helm/taskflow --namespace taskflow -f helm/taskflow/values-eks.yaml > /tmp/taskflow-rendered.yaml
+        run: |
+          helm template taskflow-production helm/taskflow \
+            --namespace taskflow \
+            -f helm/taskflow/values-eks.yaml \
+            > "$RUNNER_TEMP/taskflow-rendered.yaml"
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: "1.24"
 
       - name: Install Conftest
         run: |
@@ -91,12 +98,12 @@ jobs:
           conftest verify --policy policy/terraform
           conftest verify --policy policy/kubernetes
 
-      - name: Enforce Kubernetes policies on rendered Helm manifests
-        run: conftest test --policy policy/kubernetes /tmp/taskflow-rendered.yaml
+      - name: Enforce Kubernetes policies on rendered manifests
+        run: conftest test --policy policy/kubernetes "$RUNNER_TEMP/taskflow-rendered.yaml"
 
-  # ====================================
-  # 3. TERRAFORM FORMAT & VALIDATE
-  # ====================================
+  # ---------------------------------------------------------------------------
+  # 3. Terraform static validation - no AWS credentials or remote state access
+  # ---------------------------------------------------------------------------
   terraform-validate:
     name: Terraform - Format & Validate
     runs-on: ubuntu-latest
@@ -104,13 +111,13 @@ jobs:
       run:
         working-directory: infrastructure/terraform
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.10.5
+          terraform_version: ${{ env.TF_VERSION }}
 
       - name: Check formatting
         run: terraform fmt -check -diff -recursive
@@ -118,18 +125,22 @@ jobs:
       - name: Initialize without remote backend
         run: terraform init -backend=false -input=false
 
-      - name: Validate Terraform
+      - name: Validate configuration
         run: terraform validate
 
-  # ====================================
-  # 4. TERRAFORM PLAN (Manuel uniquement)
-  # ====================================
+  # ---------------------------------------------------------------------------
+  # 4. Production plan - runs only after a change reaches main.
+  #    PRs intentionally do not receive AWS credentials.
+  # ---------------------------------------------------------------------------
   terraform-plan:
-    name: Terraform - Plan
+    name: Terraform - Production Plan
     needs: [iac-security, helm-and-opa, terraform-validate]
-    if: github.event_name == 'workflow_dispatch' && inputs.action == 'plan'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: terraform-plan
+    permissions:
+      contents: read
+      id-token: write
     defaults:
       run:
         working-directory: infrastructure/terraform
@@ -144,45 +155,83 @@ jobs:
       TF_VAR_tfstate_lock_table_arn: ${{ vars.TF_STATE_LOCK_TABLE_ARN }}
       TF_VAR_tfstate_kms_key_arn: ${{ vars.TF_STATE_KMS_KEY_ARN }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.10.5
-      - uses: actions/setup-go@v5
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
-          
+          go-version: "1.24"
+
       - name: Install Conftest
         run: |
           go install github.com/open-policy-agent/conftest@v0.62.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-          
-      - uses: aws-actions/configure-aws-credentials@v4
+
+      - name: Configure AWS credentials - Plan role
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_TF_PLAN }}
           aws-region: ${{ vars.AWS_REGION || 'eu-west-3' }}
+
       - name: Configure remote state backend
         env:
           TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
           TF_STATE_LOCK_TABLE: ${{ vars.TF_STATE_LOCK_TABLE }}
           TF_STATE_KMS_KEY_ID: ${{ vars.TF_STATE_KMS_KEY_ID }}
         run: |
-          test -n "$TF_STATE_BUCKET" && test -n "$TF_STATE_LOCK_TABLE" && test -n "$TF_STATE_KMS_KEY_ID"
-          printf 'bucket = "%s"\nkey = "taskflow/prod/terraform.tfstate"\nregion = "%s"\nencrypt = true\nkms_key_id = "%s"\ndynamodb_table = "%s"\n' "$TF_STATE_BUCKET" "${{ vars.AWS_REGION || 'eu-west-3' }}" "$TF_STATE_KMS_KEY_ID" "$TF_STATE_LOCK_TABLE" > backend.hcl
-      - run: terraform init -backend-config=backend.hcl
-      - run: terraform plan -no-color -out=tfplan
-      - run: terraform show -json tfplan > tfplan.json
-      - run: conftest test --policy ../../policy/terraform tfplan.json
+          set -euo pipefail
+          test -n "$TF_STATE_BUCKET"
+          test -n "$TF_STATE_LOCK_TABLE"
+          test -n "$TF_STATE_KMS_KEY_ID"
 
-  # ====================================
-  # 5. TERRAFORM APPLY (Manuel uniquement)
-  # ====================================
+          cat > backend.hcl <<EOF
+          bucket         = "$TF_STATE_BUCKET"
+          key            = "taskflow/prod/terraform.tfstate"
+          region         = "$AWS_REGION"
+          encrypt        = true
+          kms_key_id     = "$TF_STATE_KMS_KEY_ID"
+          dynamodb_table = "$TF_STATE_LOCK_TABLE"
+          EOF
+
+      - name: Terraform init
+        run: terraform init -input=false -backend-config=backend.hcl
+
+      - name: Create saved Terraform plan
+        run: terraform plan -input=false -no-color -out=tfplan
+
+      - name: Convert plan to JSON for policy evaluation
+        run: terraform show -json tfplan > tfplan.json
+
+      - name: Enforce Terraform OPA policies
+        run: conftest test --policy ../../policy/terraform tfplan.json
+
+      - name: Upload reviewed Terraform plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: taskflow-production-tfplan
+          path: infrastructure/terraform/tfplan
+          if-no-files-found: error
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # 5. Apply - protected by GitHub Environment required reviewers.
+  #    Applies the exact plan generated and policy-checked above.
+  # ---------------------------------------------------------------------------
   terraform-apply:
-    name: Terraform - Apply
-    needs: [iac-security, helm-and-opa, terraform-validate]
-    if: github.event_name == 'workflow_dispatch' && inputs.action == 'apply'
+    name: Terraform - Production Apply
+    needs: [terraform-plan]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: production-infra
+    permissions:
+      contents: read
+      id-token: write
     defaults:
       run:
         working-directory: infrastructure/terraform
@@ -197,31 +246,48 @@ jobs:
       TF_VAR_tfstate_lock_table_arn: ${{ vars.TF_STATE_LOCK_TABLE_ARN }}
       TF_VAR_tfstate_kms_key_arn: ${{ vars.TF_STATE_KMS_KEY_ARN }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.10.5
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-      - name: Install Conftest
-        run: |
-          go install ://github.com
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-      - uses: aws-actions/configure-aws-credentials@v4
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS credentials - Apply role
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_TF_APPLY }}
           aws-region: ${{ vars.AWS_REGION || 'eu-west-3' }}
+
       - name: Configure remote state backend
         env:
           TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
           TF_STATE_LOCK_TABLE: ${{ vars.TF_STATE_LOCK_TABLE }}
           TF_STATE_KMS_KEY_ID: ${{ vars.TF_STATE_KMS_KEY_ID }}
         run: |
-          test -n "$TF_STATE_BUCKET" && test -n "$TF_STATE_LOCK_TABLE" && test -n "$TF_STATE_KMS_KEY_ID"
-          printf 'bucket = "%s"\nkey = "taskflow/prod/terraform.tfstate"\nregion = "%s"\nencrypt = true\nkms_key_id = "%s"\ndynamodb_table = "%s"\n' "$TF_STATE_BUCKET" "${{ vars.AWS_REGION || 'eu-west-3' }}" "$TF_STATE_KMS_KEY_ID" "$TF_STATE_LOCK_TABLE" > backend.hcl
-      - run: terraform init -backend-config=backend.hcl
-      - run: terraform plan -out=tfplan
-      - run: terraform show -json tfplan > tfplan.json
-      - run: conftest test --policy ../../policy/terraform tfplan.json
-      - run: terraform apply -auto-approve tfplan
+          set -euo pipefail
+          test -n "$TF_STATE_BUCKET"
+          test -n "$TF_STATE_LOCK_TABLE"
+          test -n "$TF_STATE_KMS_KEY_ID"
+
+          cat > backend.hcl <<EOF
+          bucket         = "$TF_STATE_BUCKET"
+          key            = "taskflow/prod/terraform.tfstate"
+          region         = "$AWS_REGION"
+          encrypt        = true
+          kms_key_id     = "$TF_STATE_KMS_KEY_ID"
+          dynamodb_table = "$TF_STATE_LOCK_TABLE"
+          EOF
+
+      - name: Terraform init
+        run: terraform init -input=false -backend-config=backend.hcl
+
+      - name: Download approved Terraform plan
+        uses: actions/download-artifact@v4
+        with:
+          name: taskflow-production-tfplan
+          path: infrastructure/terraform
+
+      - name: Apply the exact reviewed plan
+        run: terraform apply -input=false -auto-approve tfplan

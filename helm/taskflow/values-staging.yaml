@@ -1,12 +1,11 @@
 image:
   registry: docker.io
-  tag: bootstrap
+  tag: 41d4089e20ec362549a58a6843ff44a98a11918e
   pullPolicy: IfNotPresent
-
 api:
   image:
     repository: cloudopsenglab/laravel-api
-    digest: ""
+    digest: "sha256:81bf86f7a2faae5eff6b653d3777d270437363b5f449d718bb50a903f2d27f7a"
   replicas: 1
   autoscaling:
     enabled: false
@@ -20,19 +19,16 @@ api:
     DB_DATABASE: taskflow_staging
     AWS_BUCKET: REPLACE_WITH_STAGING_FILES_BUCKET
     MYSQL_ATTR_SSL_CA: /etc/ssl/certs/rds-global-bundle.pem
-
 frontend:
   image:
     repository: cloudopsenglab/react-frontend
-    digest: ""
+    digest: "sha256:b33553a1b9b73b30ae123a237afef1e4754d9ad0fd65dbed35986e724d2ad254"
   replicas: 1
   autoscaling:
     enabled: false
-
 worker:
   enabled: true
   replicas: 1
-
 secrets:
   external:
     enabled: true
@@ -40,14 +36,11 @@ secrets:
     appSecretName: taskflow/staging/laravel
     dbAppSecretArn: REPLACE_WITH_STAGING_RDS_APP_SECRET_ARN
     dbMigratorSecretArn: REPLACE_WITH_STAGING_RDS_MIGRATOR_SECRET_ARN
-
 serviceAccount:
   apiRoleArn: REPLACE_WITH_STAGING_TASKFLOW_APP_IRSA_ROLE_ARN
-
 targetGroupBinding:
   enabled: true
   frontendArn: REPLACE_WITH_STAGING_FRONTEND_TG_ARN
   apiArn: REPLACE_WITH_STAGING_API_TG_ARN
-
 pdb:
   enabled: false
